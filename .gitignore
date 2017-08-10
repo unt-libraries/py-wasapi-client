@@ -1,0 +1,14 @@
+*.pyc
+*.swp
+*.swo
+*.egg
+*.egg-info
+*.log
+*.warc.gz
+
+.cache/
+.eggs/
+build/
+dist/
+.tox/*
+__pycache__/*
