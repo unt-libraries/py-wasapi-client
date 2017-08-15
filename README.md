@@ -4,7 +4,7 @@ is being developed according to the [ait-specification](https://github.com/WASAP
 
 ## Requirements
 
-* Python 3+
+* Python 3.5 or 3.6
 
 ## Installation
 
