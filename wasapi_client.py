@@ -325,6 +325,7 @@ def main():
     try:
         query = '?{}'.format(urlencode(args.query_params, safe=':', doseq=True))
     except AttributeError:
+        # Use empty query if user didn't enter any query parameters.
         query = ''
     webdata_uri = '{}{}'.format(args.base_uri, query)
 
