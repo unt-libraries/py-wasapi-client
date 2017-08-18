@@ -232,10 +232,8 @@ class Test_download_file:
 
         with patch.object(session, 'get', return_value=mock_200) as mock_get, \
                 patch('wasapi_client.write_file') as mock_write_file:
-            response = wc.download_file(self.FILE_DATA, session)
+            wc.download_file(self.FILE_DATA, session, filename)
 
-        for item in (loc, str(mock_200.status_code), mock_200.reason):
-            assert item in response
         # Check we only tried downloading files until successful download.
         mock_get.assert_called_once_with(loc, stream=True)
         mock_write_file.assert_called_once_with(mock_200, filename)
@@ -248,7 +246,7 @@ class Test_download_file:
 
         with patch.object(session, 'get', return_value=mock_403) as mock_get, \
                 pytest.raises(wc.WASAPIDownloadError) as err:
-            wc.download_file(self.FILE_DATA, session)
+            wc.download_file(self.FILE_DATA, session, filename)
 
         for item in (str(locations), filename):
             assert item in str(err)
@@ -267,7 +265,7 @@ class Test_download_file:
                 patch('wasapi_client.write_file') as mock_write_file:
             mock_write_file.side_effect = OSError
             with pytest.raises(wc.WASAPIDownloadError) as err:
-                wc.download_file(self.FILE_DATA, session)
+                wc.download_file(self.FILE_DATA, session, filename)
 
         for item in (str(locations), filename):
             assert item in str(err)
@@ -276,7 +274,6 @@ class Test_download_file:
         mock_write_file.assert_called_once_with(mock_200, filename)
 
 
-@patch('requests.Session')
 @patch('wasapi_client.download_file')
 class TestDownloader:
     FILE_DATA = {
@@ -287,34 +284,28 @@ class TestDownloader:
                       'md5': '62f87a969af0dd857ecd6c3e7fde6aed'}
     }
 
-    def test_run(self, mock_download, mock_session):
+    def test_run(self, mock_download):
         """Test downloader when downloads are successful."""
-        msg = '{}: 200 OK'.format(self.FILE_DATA['locations'][0])
-        mock_download.return_value = msg
         # Create a queue holding two sets of file data.
         get_q = multiprocessing.JoinableQueue()
         for _ in (1, 2):
             get_q.put(self.FILE_DATA)
         result_q = multiprocessing.Queue()
         log_q = multiprocessing.Queue()
-
-        p = wc.Downloader(get_q, result_q, log_q)
-        p.start()
-        p.run()
-        p.join()
+        with patch('wasapi_client.verify_file', return_value=True):
+            p = wc.Downloader(get_q, result_q, log_q)
+            p.start()
+            p.run()
+            p.join()
         assert get_q.qsize() == 0
         assert result_q.qsize() == 2
         assert log_q.qsize() == 0
         for _ in (1, 2):
-            assert result_q.get() == msg
+            assert result_q.get() == ('success', self.FILE_DATA['filename'])
 
-    def test_run_WASAPIDownloadError(self, mock_download, mock_session):
+    def test_run_WASAPIDownloadError(self, mock_download):
         """Test downloader when downloads fail."""
-        locations = self.FILE_DATA['locations']
-        filename = self.FILE_DATA['filename']
-        msg = 'FAILED to download {} from {}'.format(filename,
-                                                     locations)
-        mock_download.side_effect = wc.WASAPIDownloadError(msg)
+        mock_download.side_effect = wc.WASAPIDownloadError()
         # Create a queue holding two sets of file data.
         get_q = multiprocessing.JoinableQueue()
         for _ in (1, 2):
@@ -330,4 +321,4 @@ class TestDownloader:
         assert result_q.qsize() == 2
         assert log_q.qsize() == 2
         for _ in (1, 2):
-            assert result_q.get() == msg
+            assert result_q.get() == ('failure', self.FILE_DATA['filename'])
