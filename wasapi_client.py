@@ -2,6 +2,7 @@
 
 import argparse
 import getpass
+import hashlib
 import logging
 import logging.handlers
 import math
@@ -9,13 +10,17 @@ import multiprocessing
 import os
 import requests
 import sys
+from collections import defaultdict
 from json.decoder import JSONDecodeError
 from queue import Empty
 from urllib.parse import urlencode
 
 
 NAME = 'wasapi-client' if __name__ == '__main__' else __name__
+
 MAIN_LOGGER = logging.getLogger('main')
+
+READ_LIMIT = 1024 * 512
 
 
 def do_listener_logging(log_q, path=''):
@@ -128,7 +133,7 @@ def convert_bytes(size):
     return '{}{}'.format(readable_size, label[i])
 
 
-def download_file(file_data, session, destination=''):
+def download_file(file_data, session, output_path):
     """Download webdata file to disk."""
     for location in file_data['locations']:
         response = session.get(location, stream=True)
@@ -136,7 +141,6 @@ def download_file(file_data, session, destination=''):
                                  response.status_code,
                                  response.reason)
         if response.status_code == 200:
-            output_path = os.path.join(destination, file_data['filename'])
             try:
                 write_file(response, output_path)
             except OSError as err:
@@ -144,7 +148,7 @@ def download_file(file_data, session, destination=''):
                 break
             # Successful download; don't try alternate locations.
             logging.info(msg)
-            return msg
+            return None
         else:
             logging.error(msg)
     # We didn't download successfully; raise error.
@@ -158,6 +162,72 @@ def write_file(response, output_path=''):
     with open(output_path, 'wb') as wtf:
         for chunk in response.iter_content(1024*4):
             wtf.write(chunk)
+
+
+def verify_file(checksums, file_path):
+    """Verify the file checksum is correct.
+
+    Takes a dictionary of hash algorithms and the corresponding
+    expected value for the file_path provided. The first success
+    or failure determines if the file is valid.
+    """
+    for algorithm, value in checksums.items():
+        hash_function = getattr(hashlib, algorithm, None)
+        if not hash_function:
+            # The hash algorithm provided is not supported by hashlib.
+            logging.debug('{} is unsupported'.format(algorithm))
+            continue
+        digest = calculate_sum(hash_function, file_path)
+        if digest == value:
+            logging.info('Checksum success at: {}'.format(file_path))
+            return True
+        else:
+            logging.error('Checksum mismatch for {}: expected {}, got {}'.format(file_path,
+                                                                                 value,
+                                                                                 digest))
+            return False
+    # We didn't find a compatible algorithm.
+    return False
+
+
+def calculate_sum(hash_function, file_path):
+    """Return the checksum of the given file."""
+    hasher = hash_function()
+    with open(file_path, 'rb') as rff:
+        r = rff.read(READ_LIMIT)
+        while r:
+            hasher.update(r)
+            r = rff.read(READ_LIMIT)
+    return hasher.hexdigest()
+
+
+def convert_queue(tuple_q):
+    """Convert a queue containing 2-element tuples into a dictionary.
+
+    The first element becomes a key. The key's value becomes a list
+    to which the second tuple element is appended.
+    """
+    ddict = defaultdict(list)
+    while not tuple_q.empty():
+        key, value = tuple_q.get()
+        ddict[key].append(value)
+    return ddict
+
+
+def generate_report(result_q):
+    """Create a summary of success/failure downloads."""
+    total = result_q.qsize()
+    results = convert_queue(result_q)
+    success = len(results.get('success', []))
+    failure = len(results.get('failure', []))
+    summary = ('Total downloads attempted: {}\n'
+               'Successful downloads: {}\n'
+               'Failed downloads: {}\n').format(total, success, failure)
+    if total != failure and failure > 0:
+        summary += 'Failed files (see log for details):\n'
+        for filename in results['failure']:
+            summary += '    {}\n'.format(filename)
+    return summary
 
 
 class Downloader(multiprocessing.Process):
@@ -189,13 +259,17 @@ class Downloader(multiprocessing.Process):
                 file_data = self.get_q.get(block=False)
             except Empty:
                 break
+            result = 'failure'
+            output_path = os.path.join(self.destination, file_data['filename'])
             try:
-                result = download_file(file_data, self.session, self.destination)
+                download_file(file_data, self.session, output_path)
             except WASAPIDownloadError as err:
                 logging.error(str(err))
-                result = str(err)  # TO DO: figure out what this should be
-            # TO DO: ADD checksum verification
-            self.result_q.put(result)
+            else:
+                # If we download the file without error, verify the checksum.
+                if verify_file(file_data['checksums'], output_path):
+                    result = 'success'
+            self.result_q.put((result, file_data['filename']))
             self.get_q.task_done()
 
 
@@ -356,11 +430,7 @@ def main():
 
     listener.stop()
 
-    result = []
-    while not result_q.empty():
-        result.append(result_q.get())
-        # need to notify about bad checksum
-    print(result)
+    print(generate_report(result_q))
 
 
 if __name__ == '__main__':
