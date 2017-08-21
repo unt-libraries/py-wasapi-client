@@ -2,6 +2,7 @@
 
 import json
 import multiprocessing
+from collections import OrderedDict
 from unittest.mock import call, patch
 
 import pytest
@@ -272,6 +273,42 @@ class Test_download_file:
         # Check we only tried downloading files until successful download.
         mock_get.assert_called_once_with(locations[0], stream=True)
         mock_write_file.assert_called_once_with(mock_200, filename)
+
+
+class Test_verify_file:
+    @patch('wasapi_client.calculate_sum')
+    def test_verify_file(self, mock_calc_sum):
+        """Test a matching checksum returns True."""
+        checksum = '33304d104f95d826da40079bad2400dc4d005403'
+        checksums = {'sha1': checksum}
+        mock_calc_sum.return_value = checksum
+        assert wc.verify_file(checksums, 'dummy/path')
+
+    def test_verify_file_unsupported_algorithm(self):
+        """Test all algorithms being unsupported returns False."""
+        checksums = {'shaq1': 'shaq1algorithmdoesnotexist'}
+        assert not wc.verify_file(checksums, 'dummy/path')
+
+    @patch('wasapi_client.calculate_sum')
+    def test_verify_file_checksum_mismatch(self, mock_calc_sum):
+        """Test calculated checksum does not match the expected."""
+        checksum = '33304d104f95d826da40079bad2400dc4d005403'
+        checksums = {'sha1': checksum}
+        mock_calc_sum.return_value = checksum + 'notmatching'
+        assert not wc.verify_file(checksums, 'dummy/path')
+
+    @patch('wasapi_client.calculate_sum')
+    def test_verify_file_one_supported_algorithm(self, mock_calc_sum):
+        """Test one unsupported/one supported algorithm returns True."""
+        checksum = '33304d104f95d826da40079bad2400dc4d005403'
+        checksums = OrderedDict([('abc', 'algorithm_unsupported'),
+                                 ('sha1', checksum)])
+        mock_calc_sum.return_value = checksum
+        with patch('wasapi_client.logging', autospec=True) as mock_logging:
+            assert wc.verify_file(checksums, 'dummy/path')
+        # Check that unsupported algorithm was tried.
+        mock_logging.debug.assert_called_once_with('abc is unsupported')
+        mock_logging.info.assert_called_once_with('Checksum success at: dummy/path')
 
 
 @patch('wasapi_client.download_file')
