@@ -323,6 +323,14 @@ class Test_calculate_sum:
             checksum = wc.calculate_sum(hashlib.sha1, 'dummy/path')
         assert checksum == hashlib.sha1(data).hexdigest()
 
+class Test_convert_queue:
+    def test_convert_queue(self):
+        q = multiprocessing.Manager().Queue()
+        q.put(('success', 'name1'))
+        q.put(('failure', 'name2'))
+        dict_from_q = wc.convert_queue(q)
+        assert dict_from_q['success'] == ['name1']
+        assert dict_from_q['failure'] == ['name2']
 
 
 @patch('wasapi_client.download_file')

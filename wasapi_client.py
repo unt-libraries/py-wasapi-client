@@ -208,8 +208,11 @@ def convert_queue(tuple_q):
     to which the second tuple element is appended.
     """
     ddict = defaultdict(list)
-    while not tuple_q.empty():
-        key, value = tuple_q.get()
+    while True:
+        try:
+            key, value = tuple_q.get(block=False)
+        except Empty:
+            break
         ddict[key].append(value)
     return ddict
 
@@ -381,7 +384,8 @@ def main():
         sys.exit(msg)
 
     # Start log writing process.
-    log_q = multiprocessing.Queue()
+    manager = multiprocessing.Manager()
+    log_q = manager.Queue()
     try:
         listener = do_listener_logging(log_q, args.log)
     except OSError as err:
@@ -423,7 +427,7 @@ def main():
     # Process webdata requests to fill webdata file queue.
     # Then start downloading with multiple processes.
     get_q = populate_downloads(webdata_uri, auth)
-    result_q = multiprocessing.Queue()
+    result_q = manager.Queue()
     for _ in range(args.processes):
         Downloader(get_q, result_q, log_q, log_level, auth, args.destination).start()
     get_q.join()
