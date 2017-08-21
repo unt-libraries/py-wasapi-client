@@ -1,9 +1,10 @@
 #!/usr/bin/env python
 
+import hashlib
 import json
 import multiprocessing
 from collections import OrderedDict
-from unittest.mock import call, patch
+from unittest.mock import call, mock_open, patch
 
 import pytest
 import requests
@@ -295,7 +296,11 @@ class Test_verify_file:
         checksum = '33304d104f95d826da40079bad2400dc4d005403'
         checksums = {'sha1': checksum}
         mock_calc_sum.return_value = checksum + 'notmatching'
-        assert not wc.verify_file(checksums, 'dummy/path')
+        with patch('wasapi_client.logging', autospec=True) as mock_logging:
+            assert not wc.verify_file(checksums, 'dummy/path')
+        msg = 'Checksum mismatch for dummy/path: expected {}, got {}notmatching'.format(checksum,
+                                                                                        checksum)
+        mock_logging.error.assert_called_once_with(msg)
 
     @patch('wasapi_client.calculate_sum')
     def test_verify_file_one_supported_algorithm(self, mock_calc_sum):
@@ -309,6 +314,15 @@ class Test_verify_file:
         # Check that unsupported algorithm was tried.
         mock_logging.debug.assert_called_once_with('abc is unsupported')
         mock_logging.info.assert_called_once_with('Checksum success at: dummy/path')
+
+
+class Test_calculate_sum:
+    def test_calculate_sum(self):
+        data = b'data from file'
+        with patch('wasapi_client.open', mock_open(read_data=data)):
+            checksum = wc.calculate_sum(hashlib.sha1, 'dummy/path')
+        assert checksum == hashlib.sha1(data).hexdigest()
+
 
 
 @patch('wasapi_client.download_file')
