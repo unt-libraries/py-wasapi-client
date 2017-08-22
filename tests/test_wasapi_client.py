@@ -323,6 +323,7 @@ class Test_calculate_sum:
             checksum = wc.calculate_sum(hashlib.sha1, 'dummy/path')
         assert checksum == hashlib.sha1(data).hexdigest()
 
+
 class Test_convert_queue:
     def test_convert_queue(self):
         q = multiprocessing.Manager().Queue()
@@ -331,6 +332,37 @@ class Test_convert_queue:
         dict_from_q = wc.convert_queue(q)
         assert dict_from_q['success'] == ['name1']
         assert dict_from_q['failure'] == ['name2']
+
+
+class Test_generate_report:
+    def test_generate_report_all_success(self):
+        q = multiprocessing.Manager().Queue()
+        q.put(('success', 'name1'))
+        q.put(('success', 'name2'))
+        report = wc.generate_report(q)
+        assert report == ('Total downloads attempted: 2\n'
+                          'Successful downloads: 2\n'
+                          'Failed downloads: 0\n')
+
+    def test_generate_report_one_failure(self):
+        q = multiprocessing.Manager().Queue()
+        q.put(('success', 'name1'))
+        q.put(('failure', 'name2'))
+        report = wc.generate_report(q)
+        assert report == ('Total downloads attempted: 2\n'
+                          'Successful downloads: 1\n'
+                          'Failed downloads: 1\n'
+                          'Failed files (see log for details):\n'
+                          '    name2\n')
+
+    def test_generate_report_all_failure(self):
+        q = multiprocessing.Manager().Queue()
+        q.put(('failure', 'name1'))
+        q.put(('failure', 'name2'))
+        report = wc.generate_report(q)
+        assert report == ('Total downloads attempted: 2\n'
+                          'Successful downloads: 0\n'
+                          'Failed downloads: 2\n')
 
 
 @patch('wasapi_client.download_file')
