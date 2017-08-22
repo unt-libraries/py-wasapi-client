@@ -413,3 +413,26 @@ class TestDownloader:
         assert log_q.qsize() == 2
         for _ in (1, 2):
             assert result_q.get() == ('failure', self.FILE_DATA['filename'])
+
+
+class Test_parse_args:
+    def test_SetQueryParametersAction(self):
+        """Test that arguments passed with this action are in query_params."""
+        args = wc._parse_args(['--crawl-start-after',
+                               '2016-12-22T13:01:00',
+                               '--crawl-start-before',
+                               '2016-12-22T15:11:00',
+                               '-c'])
+        assert len(args.query_params) == 2
+        assert args.query_params['crawl-start-after'] == '2016-12-22T13:01:00'
+        assert args.query_params['crawl-start-before'] == '2016-12-22T15:11:00'
+
+    def test_SetQueryParametersAction_multiple_collections(self):
+        """Test multiple collections end up in query_params.
+
+        A query can have multiple collections, so test that the
+        user can supply multiple values.
+        """
+        args = wc._parse_args(['--collection', '12345', '98', '--crawl', '12'])
+        assert len(args.query_params) == 2
+        assert args.query_params['collection'] == ['12345', '98']

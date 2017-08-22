@@ -286,7 +286,7 @@ class SetQueryParametersAction(argparse.Action):
         namespace.query_params[option] = values
 
 
-def _build_parser():
+def _parse_args(args=sys.argv[1:]):
     """Parse the commandline arguments."""
     description = """
         Download WARC files from a WASAPI access point.
@@ -372,12 +372,11 @@ def _build_parser():
                              action=SetQueryParametersAction,
                              help='request files from crawl jobs starting '
                                   'before this date')
-    return parser
+    return parser.parse_args(args)
 
 
 def main():
-    parser = _build_parser()
-    args = parser.parse_args()
+    args = _parse_args()
 
     if not os.access(args.destination, os.W_OK):
         msg = 'Cannot write to destination: {}'.format(args.destination)
