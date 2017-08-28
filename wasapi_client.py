@@ -378,7 +378,9 @@ def _parse_args(args=sys.argv[1:]):
 def main():
     args = _parse_args()
 
-    if not os.access(args.destination, os.W_OK):
+    if (not os.access(args.destination, os.W_OK)
+            and not args.size
+            and not args.count):
         msg = 'Cannot write to destination: {}'.format(args.destination)
         sys.exit(msg)
 
