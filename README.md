@@ -1,4 +1,4 @@
-# py-wasapi-client
+# py-wasapi-client [![Build Status](https://travis-ci.org/unt-libraries/py-wasapi-client.svg)](https://travis-ci.org/unt-libraries/py-wasapi-client)
 A client for the [Archive-It] WASAPI Data Transfer API. This client
 is being developed according to the [ait-specification](https://github.com/WASAPI-Community/data-transfer-apis/tree/master/ait-specification).
 
