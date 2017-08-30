@@ -2,6 +2,7 @@
 
 import argparse
 import getpass
+import hashlib
 import logging
 import logging.handlers
 import math
@@ -9,13 +10,17 @@ import multiprocessing
 import os
 import requests
 import sys
+from collections import defaultdict
 from json.decoder import JSONDecodeError
 from queue import Empty
 from urllib.parse import urlencode
 
 
 NAME = 'wasapi-client' if __name__ == '__main__' else __name__
+
 MAIN_LOGGER = logging.getLogger('main')
+
+READ_LIMIT = 1024 * 512
 
 
 def do_listener_logging(log_q, path=''):
@@ -46,6 +51,10 @@ class WASAPIDownloadError(Exception):
     pass
 
 
+class WASAPIManifestError(Exception):
+    pass
+
+
 def make_session(auth=None):
     """Make a session that will store our auth.
 
@@ -71,24 +80,6 @@ def get_webdata(webdata_uri, session):
         return response.json()
     except JSONDecodeError as err:
         sys.exit('Non-JSON response from {}'.format(webdata_uri))
-
-
-def populate_downloads(page_uri, auth=None):
-    """Repeat webdata requests to gather downloadable file info.
-
-    Returns a queue containing file locations and checksums.
-    """
-    session = make_session(auth)
-    get_q = multiprocessing.JoinableQueue()
-    while page_uri:
-        webdata = get_webdata(page_uri, session)
-        for f in webdata['files']:
-            get_q.put({'locations': f['locations'],
-                       'filename': f['filename'],
-                       'checksums': f['checksums']})
-        page_uri = webdata.get('next', None)
-    session.close()
-    return get_q
 
 
 def get_files_count(webdata_uri, auth=None):
@@ -128,7 +119,64 @@ def convert_bytes(size):
     return '{}{}'.format(readable_size, label[i])
 
 
-def download_file(file_data, session, destination=''):
+class Downloads:
+    """Handles cycling through all of our query results.
+
+    If download is True, we create a queue of the files that need to be
+    downloaded. If manifest is True, store the checksums/filenames for
+    each available hash algorithm.
+    """
+
+    def __init__(self, page_uri, auth=None, download=True, destination=''):
+        self.page_uri = page_uri
+        self.auth = auth
+        self.download = download
+        if self.download:
+            self.get_q = multiprocessing.JoinableQueue()
+        self.checksums = defaultdict(list)
+        self.urls = []
+        self.destination = '' if destination == '.' else destination
+        self.populate_downloads()
+
+    def populate_downloads(self):
+        """Repeat webdata requests to gather downloadable file info.
+
+        Returns a queue containing file locations and checksums.
+        """
+        session = make_session(self.auth)
+        current_uri = self.page_uri
+        while current_uri:
+            webdata = get_webdata(current_uri, session)
+            for f in webdata['files']:
+                # Store the first locations URL per file only.
+                self.urls.append(f['locations'][0])
+                path = os.path.join(self.destination, f['filename'])
+                for algorithm, value in f['checksums'].items():
+                    self.checksums[algorithm].append((value, path))
+                if self.download:
+                    self.get_q.put({'locations': f['locations'],
+                                    'filename': f['filename'],
+                                    'checksums': f['checksums']})
+            current_uri = webdata.get('next', None)
+        session.close()
+
+    def generate_manifests(self):
+        """Produce manifest files for all hash algorithms."""
+        for algorithm in self.checksums:
+            self.write_manifest_file(algorithm)
+
+    def write_manifest_file(self, algorithm):
+        """Write a manifest file for the provided algorithm."""
+        if algorithm not in self.checksums:
+            raise WASAPIManifestError('No values for {}'.format(algorithm))
+        manifest_path = os.path.join(self.destination,
+                                     'manifest-{}.txt'.format(algorithm))
+        with open(manifest_path, 'w') as manifest_f:
+            for checksum, path in self.checksums[algorithm]:
+                manifest_f.write('{}\t{}\n'.format(checksum, path))
+
+
+def download_file(file_data, session, output_path):
     """Download webdata file to disk."""
     for location in file_data['locations']:
         response = session.get(location, stream=True)
@@ -136,7 +184,6 @@ def download_file(file_data, session, destination=''):
                                  response.status_code,
                                  response.reason)
         if response.status_code == 200:
-            output_path = os.path.join(destination, file_data['filename'])
             try:
                 write_file(response, output_path)
             except OSError as err:
@@ -144,7 +191,7 @@ def download_file(file_data, session, destination=''):
                 break
             # Successful download; don't try alternate locations.
             logging.info(msg)
-            return msg
+            return None
         else:
             logging.error(msg)
     # We didn't download successfully; raise error.
@@ -158,6 +205,75 @@ def write_file(response, output_path=''):
     with open(output_path, 'wb') as wtf:
         for chunk in response.iter_content(1024*4):
             wtf.write(chunk)
+
+
+def verify_file(checksums, file_path):
+    """Verify the file checksum is correct.
+
+    Takes a dictionary of hash algorithms and the corresponding
+    expected value for the file_path provided. The first success
+    or failure determines if the file is valid.
+    """
+    for algorithm, value in checksums.items():
+        hash_function = getattr(hashlib, algorithm, None)
+        if not hash_function:
+            # The hash algorithm provided is not supported by hashlib.
+            logging.debug('{} is unsupported'.format(algorithm))
+            continue
+        digest = calculate_sum(hash_function, file_path)
+        if digest == value:
+            logging.info('Checksum success at: {}'.format(file_path))
+            return True
+        else:
+            logging.error('Checksum mismatch for {}: expected {}, got {}'.format(file_path,
+                                                                                 value,
+                                                                                 digest))
+            return False
+    # We didn't find a compatible algorithm.
+    return False
+
+
+def calculate_sum(hash_function, file_path):
+    """Return the checksum of the given file."""
+    hasher = hash_function()
+    with open(file_path, 'rb') as rff:
+        r = rff.read(READ_LIMIT)
+        while r:
+            hasher.update(r)
+            r = rff.read(READ_LIMIT)
+    return hasher.hexdigest()
+
+
+def convert_queue(tuple_q):
+    """Convert a queue containing 2-element tuples into a dictionary.
+
+    The first element becomes a key. The key's value becomes a list
+    to which the second tuple element is appended.
+    """
+    ddict = defaultdict(list)
+    while True:
+        try:
+            key, value = tuple_q.get(block=False)
+        except Empty:
+            break
+        ddict[key].append(value)
+    return ddict
+
+
+def generate_report(result_q):
+    """Create a summary of success/failure downloads."""
+    total = result_q.qsize()
+    results = convert_queue(result_q)
+    success = len(results.get('success', []))
+    failure = len(results.get('failure', []))
+    summary = ('Total downloads attempted: {}\n'
+               'Successful downloads: {}\n'
+               'Failed downloads: {}\n').format(total, success, failure)
+    if total != failure and failure > 0:
+        summary += 'Failed files (see log for details):\n'
+        for filename in results['failure']:
+            summary += '    {}\n'.format(filename)
+    return summary
 
 
 class Downloader(multiprocessing.Process):
@@ -189,13 +305,17 @@ class Downloader(multiprocessing.Process):
                 file_data = self.get_q.get(block=False)
             except Empty:
                 break
+            result = 'failure'
+            output_path = os.path.join(self.destination, file_data['filename'])
             try:
-                result = download_file(file_data, self.session, self.destination)
+                download_file(file_data, self.session, output_path)
             except WASAPIDownloadError as err:
                 logging.error(str(err))
-                result = str(err)  # TO DO: figure out what this should be
-            # TO DO: ADD checksum verification
-            self.result_q.put(result)
+            else:
+                # If we download the file without error, verify the checksum.
+                if verify_file(file_data['checksums'], output_path):
+                    result = 'success'
+            self.result_q.put((result, file_data['filename']))
             self.get_q.task_done()
 
 
@@ -209,7 +329,7 @@ class SetQueryParametersAction(argparse.Action):
         namespace.query_params[option] = values
 
 
-def _build_parser():
+def _parse_args(args=sys.argv[1:]):
     """Parse the commandline arguments."""
     description = """
         Download WARC files from a WASAPI access point.
@@ -225,10 +345,6 @@ def _build_parser():
     parser = argparse.ArgumentParser(description=description,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
 
-    parser.add_argument('-u',
-                        '--user',
-                        dest='user',
-                        help='username for API authentication')
     parser.add_argument('-b',
                         '--base-uri',
                         dest='base_uri',
@@ -239,8 +355,19 @@ def _build_parser():
                         '--destination',
                         default='.',
                         help='location for storing downloaded files')
-    parser.add_argument('--log',
+    parser.add_argument('-l',
+                        '--log',
                         help='file to which logging should be written')
+    parser.add_argument('-n',
+                        '--no-manifest',
+                        action='store_true',
+                        dest='skip_manifest',
+                        help='do not generate checksum files (ignored'
+                             ' when used in combination with --manifest')
+    parser.add_argument('-u',
+                        '--user',
+                        dest='user',
+                        help='username for API authentication')
     parser.add_argument('-v',
                         '--verbose',
                         action='count',
@@ -248,14 +375,14 @@ def _build_parser():
                         help='log verbosely; -v is INFO, -vv is DEBUG')
 
     out_group = parser.add_mutually_exclusive_group()
-#    out_group.add_argument('-l',
-#                       '--list',
-#                       action='store_true',
-#                       help='list files with checksums and exit')
     out_group.add_argument('-c',
                            '--count',
                            action='store_true',
                            help='print number of files for download and exit')
+    out_group.add_argument('-m',
+                           '--manifest',
+                           action='store_true',
+                           help='generate checksum files only and exit')
     out_group.add_argument('-p',
                            '--processes',
                            type=int,
@@ -265,6 +392,10 @@ def _build_parser():
                            '--size',
                            action='store_true',
                            help='print count and total size of files and exit')
+    out_group.add_argument('-r',
+                           '--urls',
+                           action='store_true',
+                           help='list URLs for downloadable files only and exit')
 
     # Arguments to become part of query parameter string
     param_group = parser.add_argument_group('query parameters',
@@ -295,19 +426,21 @@ def _build_parser():
                              action=SetQueryParametersAction,
                              help='request files from crawl jobs starting '
                                   'before this date')
-    return parser
+    return parser.parse_args(args)
 
 
 def main():
-    parser = _build_parser()
-    args = parser.parse_args()
+    args = _parse_args()
 
-    if not os.access(args.destination, os.W_OK):
+    if (not os.access(args.destination, os.W_OK)
+            and not args.size
+            and not args.count):
         msg = 'Cannot write to destination: {}'.format(args.destination)
         sys.exit(msg)
 
     # Start log writing process.
-    log_q = multiprocessing.Queue()
+    manager = multiprocessing.Manager()
+    log_q = manager.Queue()
     try:
         listener = do_listener_logging(log_q, args.log)
     except OSError as err:
@@ -346,21 +479,34 @@ def main():
         print('Number of Files: ', get_files_count(webdata_uri, auth))
         sys.exit()
 
+    # Process webdata requests to generate checksum files.
+    if args.manifest:
+        downloads = Downloads(webdata_uri, auth, download=False,
+                              destination=args.destination)
+        downloads.generate_manifests()
+        sys.exit()
+    # Print the URLs for files that can be downloaded; don't download them.
+    if args.urls:
+        downloads = Downloads(webdata_uri, auth, download=False,
+                              destination=args.destination)
+        for url in downloads.urls:
+            print(url)
+        sys.exit()
     # Process webdata requests to fill webdata file queue.
     # Then start downloading with multiple processes.
-    get_q = populate_downloads(webdata_uri, auth)
-    result_q = multiprocessing.Queue()
+    downloads = Downloads(webdata_uri, auth, download=True,
+                          destination=args.destination)
+    get_q = downloads.get_q
+    result_q = manager.Queue()
     for _ in range(args.processes):
         Downloader(get_q, result_q, log_q, log_level, auth, args.destination).start()
     get_q.join()
 
     listener.stop()
 
-    result = []
-    while not result_q.empty():
-        result.append(result_q.get())
-        # need to notify about bad checksum
-    print(result)
+    if not args.skip_manifest:
+        downloads.generate_manifests()
+    print(generate_report(result_q))
 
 
 if __name__ == '__main__':

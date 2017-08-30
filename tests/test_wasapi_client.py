@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 
+import hashlib
 import json
 import multiprocessing
-from unittest.mock import call, patch
+from collections import OrderedDict
+from unittest.mock import call, mock_open, patch
 
 import pytest
 import requests
@@ -135,11 +137,12 @@ class Test_get_webdata:
 
 
 @patch('requests.Session')
-class Test_populate_downloads:
+class Test_Downloads:
     def test_populate_downloads(self, mock_session):
         """Test a queue is returned with expected data."""
         mock_session.return_value.get.return_value = MockResponse200()
-        j_queue = wc.populate_downloads(WASAPI_URL)
+        downloads = wc.Downloads(WASAPI_URL, download=True)
+        j_queue = downloads.get_q
         assert j_queue.qsize() == 2
         # Drain the JoinableQueue to avoid BrokenPipeError.
         # There could be a better way to handle this...
@@ -155,7 +158,8 @@ class Test_populate_downloads:
         p1 = WASAPI_TEXT.replace('"next":null', '"next":"http://test?page=2"')
         responses = [MockResponse200(p1), MockResponse200()]
         mock_session.return_value.get.side_effect = responses
-        j_queue = wc.populate_downloads(WASAPI_URL)
+        downloads = wc.Downloads(WASAPI_URL, download=True)
+        j_queue = downloads.get_q
         assert j_queue.qsize() == 4
         # Drain the JoinableQueue to avoid BrokenPipeError.
         while j_queue.qsize():
@@ -163,6 +167,83 @@ class Test_populate_downloads:
             j_queue.task_done()
         for field in ('locations', 'filename', 'checksums'):
             assert field in q_item
+
+    def test_populate_downloads_no_get_q(self, mock_session):
+        """Test download=False prevents get_q attribute existing."""
+        mock_session.return_value.get.return_value = MockResponse200()
+        downloads = wc.Downloads(WASAPI_URL, download=False)
+        with pytest.raises(AttributeError):
+            getattr(downloads, 'get_q')
+
+    def test_populate_downloads_urls(self, mock_session):
+        """Test urls is populated with first location per file."""
+        mock_session.return_value.get.return_value = MockResponse200()
+        downloads = wc.Downloads(WASAPI_URL, download=False)
+        assert len(downloads.urls) == 2
+        for url in ['https://warcs.example.com/webdatafile/AIT-JOB256123-00000.warc.gz',
+                    'https://warcs.example.com/webdatafile/AIT-JOB256118-00000.warc.gz']:
+            assert url in downloads.urls
+
+    def test_populate_downloads_manifest(self, mock_session):
+        """Test the checksums dict is populated."""
+        mock_session.return_value.get.return_value = MockResponse200()
+        downloads = wc.Downloads(WASAPI_URL, download=False)
+        assert len(downloads.checksums)
+        assert downloads.checksums['md5'] == [('61f818912d1f39bc9dd15d4b87461110',
+                                               'AIT-JOB256123-00000.warc.gz'),
+                                              ('748120fd9672b22df5942bb44e9cde81',
+                                               'ARCHIVEIT-JOB256118-00000.warc.gz')]
+        assert downloads.checksums['sha1'] == [('edef6bca652d75d0587ef411d5f028335341b074',
+                                                'AIT-JOB256123-00000.warc.gz'),
+                                               ('54a466421471ef7d8cb4d6bbfb85afd76022a378',
+                                                'ARCHIVEIT-JOB256118-00000.warc.gz')]
+
+    def test_populate_downloads_manifest_destination(self, mock_session):
+        """Test the checksums dict is populated with destination included."""
+        mock_session.return_value.get.return_value = MockResponse200()
+        downloads = wc.Downloads(WASAPI_URL, download=False, destination='/tmp')
+        assert len(downloads.checksums)
+        assert downloads.checksums['md5'] == [('61f818912d1f39bc9dd15d4b87461110',
+                                               '/tmp/AIT-JOB256123-00000.warc.gz'),
+                                              ('748120fd9672b22df5942bb44e9cde81',
+                                               '/tmp/ARCHIVEIT-JOB256118-00000.warc.gz')]
+        assert downloads.checksums['sha1'] == [('edef6bca652d75d0587ef411d5f028335341b074',
+                                                '/tmp/AIT-JOB256123-00000.warc.gz'),
+                                               ('54a466421471ef7d8cb4d6bbfb85afd76022a378',
+                                                '/tmp/ARCHIVEIT-JOB256118-00000.warc.gz')]
+
+    def test_populate_downloads_generate_manifest(self, mock_session, tmpdir):
+        """Test checksum files are created for all algorithms."""
+        mock_session.return_value.get.return_value = MockResponse200()
+        sub_dir = 'downloads'
+        dest = tmpdir.mkdir(sub_dir)
+        downloads = wc.Downloads(WASAPI_URL, download=False, destination=str(dest))
+        downloads.generate_manifests()
+        sub_dir_contents = dest.listdir()
+        assert len(sub_dir_contents) == 2
+        for name in ['manifest-md5.txt', 'manifest-sha1.txt']:
+            assert dest.join(name) in sub_dir_contents
+
+    def test_write_manifest_file(self, mock_session, tmpdir):
+        """Test a manifest file is written for the given algorithm."""
+        mock_session.return_value.get.return_value = MockResponse200()
+        sub_dir = 'downloads'
+        dest = tmpdir.mkdir(sub_dir)
+        downloads = wc.Downloads(WASAPI_URL, download=False, destination=str(dest))
+        downloads.write_manifest_file('sha1')
+        assert len(dest.listdir()) == 1
+        txt = ('edef6bca652d75d0587ef411d5f028335341b074\t{p}/AIT-JOB256123-00000.warc.gz\n'
+               '54a466421471ef7d8cb4d6bbfb85afd76022a378\t{p}/ARCHIVEIT-JOB256118-00000.warc.gz\n')
+        assert dest.join('manifest-sha1.txt').read() == txt.format(p=dest)
+
+    def test_write_manifest_file_wrong_algorithm(self, mock_session, tmpdir):
+        """Test writing a manifest file for an algorithm we don't have."""
+        mock_session.return_value.get.return_value = MockResponse200()
+        sub_dir = 'downloads'
+        dest = tmpdir.mkdir(sub_dir)
+        downloads = wc.Downloads(WASAPI_URL, download=False, destination=str(dest))
+        with pytest.raises(wc.WASAPIManifestError):
+            downloads.write_manifest_file('sha2')
 
 
 @patch('requests.Session')
@@ -232,10 +313,8 @@ class Test_download_file:
 
         with patch.object(session, 'get', return_value=mock_200) as mock_get, \
                 patch('wasapi_client.write_file') as mock_write_file:
-            response = wc.download_file(self.FILE_DATA, session)
+            wc.download_file(self.FILE_DATA, session, filename)
 
-        for item in (loc, str(mock_200.status_code), mock_200.reason):
-            assert item in response
         # Check we only tried downloading files until successful download.
         mock_get.assert_called_once_with(loc, stream=True)
         mock_write_file.assert_called_once_with(mock_200, filename)
@@ -248,7 +327,7 @@ class Test_download_file:
 
         with patch.object(session, 'get', return_value=mock_403) as mock_get, \
                 pytest.raises(wc.WASAPIDownloadError) as err:
-            wc.download_file(self.FILE_DATA, session)
+            wc.download_file(self.FILE_DATA, session, filename)
 
         for item in (str(locations), filename):
             assert item in str(err)
@@ -267,7 +346,7 @@ class Test_download_file:
                 patch('wasapi_client.write_file') as mock_write_file:
             mock_write_file.side_effect = OSError
             with pytest.raises(wc.WASAPIDownloadError) as err:
-                wc.download_file(self.FILE_DATA, session)
+                wc.download_file(self.FILE_DATA, session, filename)
 
         for item in (str(locations), filename):
             assert item in str(err)
@@ -276,7 +355,95 @@ class Test_download_file:
         mock_write_file.assert_called_once_with(mock_200, filename)
 
 
-@patch('requests.Session')
+class Test_verify_file:
+    @patch('wasapi_client.calculate_sum')
+    def test_verify_file(self, mock_calc_sum):
+        """Test a matching checksum returns True."""
+        checksum = '33304d104f95d826da40079bad2400dc4d005403'
+        checksums = {'sha1': checksum}
+        mock_calc_sum.return_value = checksum
+        assert wc.verify_file(checksums, 'dummy/path')
+
+    def test_verify_file_unsupported_algorithm(self):
+        """Test all algorithms being unsupported returns False."""
+        checksums = {'shaq1': 'shaq1algorithmdoesnotexist'}
+        assert not wc.verify_file(checksums, 'dummy/path')
+
+    @patch('wasapi_client.calculate_sum')
+    def test_verify_file_checksum_mismatch(self, mock_calc_sum):
+        """Test calculated checksum does not match the expected."""
+        checksum = '33304d104f95d826da40079bad2400dc4d005403'
+        checksums = {'sha1': checksum}
+        mock_calc_sum.return_value = checksum + 'notmatching'
+        with patch('wasapi_client.logging', autospec=True) as mock_logging:
+            assert not wc.verify_file(checksums, 'dummy/path')
+        msg = 'Checksum mismatch for dummy/path: expected {}, got {}notmatching'.format(checksum,
+                                                                                        checksum)
+        mock_logging.error.assert_called_once_with(msg)
+
+    @patch('wasapi_client.calculate_sum')
+    def test_verify_file_one_supported_algorithm(self, mock_calc_sum):
+        """Test one unsupported/one supported algorithm returns True."""
+        checksum = '33304d104f95d826da40079bad2400dc4d005403'
+        checksums = OrderedDict([('abc', 'algorithm_unsupported'),
+                                 ('sha1', checksum)])
+        mock_calc_sum.return_value = checksum
+        with patch('wasapi_client.logging', autospec=True) as mock_logging:
+            assert wc.verify_file(checksums, 'dummy/path')
+        # Check that unsupported algorithm was tried.
+        mock_logging.debug.assert_called_once_with('abc is unsupported')
+        mock_logging.info.assert_called_once_with('Checksum success at: dummy/path')
+
+
+class Test_calculate_sum:
+    def test_calculate_sum(self):
+        data = b'data from file'
+        with patch('wasapi_client.open', mock_open(read_data=data)):
+            checksum = wc.calculate_sum(hashlib.sha1, 'dummy/path')
+        assert checksum == hashlib.sha1(data).hexdigest()
+
+
+class Test_convert_queue:
+    def test_convert_queue(self):
+        q = multiprocessing.Manager().Queue()
+        q.put(('success', 'name1'))
+        q.put(('failure', 'name2'))
+        dict_from_q = wc.convert_queue(q)
+        assert dict_from_q['success'] == ['name1']
+        assert dict_from_q['failure'] == ['name2']
+
+
+class Test_generate_report:
+    def test_generate_report_all_success(self):
+        q = multiprocessing.Manager().Queue()
+        q.put(('success', 'name1'))
+        q.put(('success', 'name2'))
+        report = wc.generate_report(q)
+        assert report == ('Total downloads attempted: 2\n'
+                          'Successful downloads: 2\n'
+                          'Failed downloads: 0\n')
+
+    def test_generate_report_one_failure(self):
+        q = multiprocessing.Manager().Queue()
+        q.put(('success', 'name1'))
+        q.put(('failure', 'name2'))
+        report = wc.generate_report(q)
+        assert report == ('Total downloads attempted: 2\n'
+                          'Successful downloads: 1\n'
+                          'Failed downloads: 1\n'
+                          'Failed files (see log for details):\n'
+                          '    name2\n')
+
+    def test_generate_report_all_failure(self):
+        q = multiprocessing.Manager().Queue()
+        q.put(('failure', 'name1'))
+        q.put(('failure', 'name2'))
+        report = wc.generate_report(q)
+        assert report == ('Total downloads attempted: 2\n'
+                          'Successful downloads: 0\n'
+                          'Failed downloads: 2\n')
+
+
 @patch('wasapi_client.download_file')
 class TestDownloader:
     FILE_DATA = {
@@ -287,34 +454,27 @@ class TestDownloader:
                       'md5': '62f87a969af0dd857ecd6c3e7fde6aed'}
     }
 
-    def test_run(self, mock_download, mock_session):
+    def test_run(self, mock_download):
         """Test downloader when downloads are successful."""
-        msg = '{}: 200 OK'.format(self.FILE_DATA['locations'][0])
-        mock_download.return_value = msg
         # Create a queue holding two sets of file data.
         get_q = multiprocessing.JoinableQueue()
         for _ in (1, 2):
             get_q.put(self.FILE_DATA)
         result_q = multiprocessing.Queue()
         log_q = multiprocessing.Queue()
-
-        p = wc.Downloader(get_q, result_q, log_q)
-        p.start()
-        p.run()
-        p.join()
+        with patch('wasapi_client.verify_file', return_value=True):
+            p = wc.Downloader(get_q, result_q, log_q)
+            p.start()
+            p.join()
         assert get_q.qsize() == 0
         assert result_q.qsize() == 2
         assert log_q.qsize() == 0
         for _ in (1, 2):
-            assert result_q.get() == msg
+            assert result_q.get() == ('success', self.FILE_DATA['filename'])
 
-    def test_run_WASAPIDownloadError(self, mock_download, mock_session):
+    def test_run_WASAPIDownloadError(self, mock_download):
         """Test downloader when downloads fail."""
-        locations = self.FILE_DATA['locations']
-        filename = self.FILE_DATA['filename']
-        msg = 'FAILED to download {} from {}'.format(filename,
-                                                     locations)
-        mock_download.side_effect = wc.WASAPIDownloadError(msg)
+        mock_download.side_effect = wc.WASAPIDownloadError()
         # Create a queue holding two sets of file data.
         get_q = multiprocessing.JoinableQueue()
         for _ in (1, 2):
@@ -330,4 +490,27 @@ class TestDownloader:
         assert result_q.qsize() == 2
         assert log_q.qsize() == 2
         for _ in (1, 2):
-            assert result_q.get() == msg
+            assert result_q.get() == ('failure', self.FILE_DATA['filename'])
+
+
+class Test_parse_args:
+    def test_SetQueryParametersAction(self):
+        """Test that arguments passed with this action are in query_params."""
+        args = wc._parse_args(['--crawl-start-after',
+                               '2016-12-22T13:01:00',
+                               '--crawl-start-before',
+                               '2016-12-22T15:11:00',
+                               '-c'])
+        assert len(args.query_params) == 2
+        assert args.query_params['crawl-start-after'] == '2016-12-22T13:01:00'
+        assert args.query_params['crawl-start-before'] == '2016-12-22T15:11:00'
+
+    def test_SetQueryParametersAction_multiple_collections(self):
+        """Test multiple collections end up in query_params.
+
+        A query can have multiple collections, so test that the
+        user can supply multiple values.
+        """
+        args = wc._parse_args(['--collection', '12345', '98', '--crawl', '12'])
+        assert len(args.query_params) == 2
+        assert args.query_params['collection'] == ['12345', '98']
