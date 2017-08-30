@@ -484,7 +484,6 @@ class TestDownloader:
 
         p = wc.Downloader(get_q, result_q, log_q)
         p.start()
-        p.run()
         p.join()
         assert get_q.qsize() == 0
         assert result_q.qsize() == 2
