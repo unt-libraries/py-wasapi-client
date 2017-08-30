@@ -127,15 +127,14 @@ class Downloads:
     each available hash algorithm.
     """
 
-    def __init__(self, page_uri, auth=None, download=True, manifest=True,
-                 destination=''):
+    def __init__(self, page_uri, auth=None, download=True, destination=''):
         self.page_uri = page_uri
         self.auth = auth
         self.download = download
         if self.download:
             self.get_q = multiprocessing.JoinableQueue()
-        self.manifest = manifest
         self.checksums = defaultdict(list)
+        self.urls = []
         self.destination = '' if destination == '.' else destination
         self.populate_downloads()
 
@@ -149,14 +148,15 @@ class Downloads:
         while current_uri:
             webdata = get_webdata(current_uri, session)
             for f in webdata['files']:
+                # Store the first locations URL per file only.
+                self.urls.append(f['locations'][0])
+                path = os.path.join(self.destination, f['filename'])
+                for algorithm, value in f['checksums'].items():
+                    self.checksums[algorithm].append((value, path))
                 if self.download:
                     self.get_q.put({'locations': f['locations'],
                                     'filename': f['filename'],
                                     'checksums': f['checksums']})
-                if self.manifest:
-                    path = os.path.join(self.destination, f['filename'])
-                    for algorithm, value in f['checksums'].items():
-                        self.checksums[algorithm].append((value, path))
             current_uri = webdata.get('next', None)
         session.close()
 
@@ -173,7 +173,7 @@ class Downloads:
                                      'manifest-{}.txt'.format(algorithm))
         with open(manifest_path, 'w') as manifest_f:
             for checksum, path in self.checksums[algorithm]:
-                manifest_f.write('{} {}\n'.format(checksum, path))
+                manifest_f.write('{}\t{}\n'.format(checksum, path))
 
 
 def download_file(file_data, session, output_path):
@@ -392,6 +392,10 @@ def _parse_args(args=sys.argv[1:]):
                            '--size',
                            action='store_true',
                            help='print count and total size of files and exit')
+    out_group.add_argument('-r',
+                           '--urls',
+                           action='store_true',
+                           help='list URLs for downloadable files only and exit')
 
     # Arguments to become part of query parameter string
     param_group = parser.add_argument_group('query parameters',
@@ -478,12 +482,19 @@ def main():
     # Process webdata requests to generate checksum files.
     if args.manifest:
         downloads = Downloads(webdata_uri, auth, download=False,
-                              manifest=True, destination=args.destination)
+                              destination=args.destination)
+        downloads.generate_manifests()
+        sys.exit()
+    # Print the URLs for files that can be downloaded; don't download them.
+    if args.urls:
+        downloads = Downloads(webdata_uri, auth, download=False,
+                              destination=args.destination)
+        for url in downloads.urls:
+            print(url)
         sys.exit()
     # Process webdata requests to fill webdata file queue.
     # Then start downloading with multiple processes.
     downloads = Downloads(webdata_uri, auth, download=True,
-                          manifest=not args.skip_manifest,
                           destination=args.destination)
     get_q = downloads.get_q
     result_q = manager.Queue()

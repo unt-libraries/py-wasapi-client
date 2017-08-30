@@ -141,7 +141,7 @@ class Test_Downloads:
     def test_populate_downloads(self, mock_session):
         """Test a queue is returned with expected data."""
         mock_session.return_value.get.return_value = MockResponse200()
-        downloads = wc.Downloads(WASAPI_URL, download=True, manifest=False)
+        downloads = wc.Downloads(WASAPI_URL, download=True)
         j_queue = downloads.get_q
         assert j_queue.qsize() == 2
         # Drain the JoinableQueue to avoid BrokenPipeError.
@@ -158,7 +158,7 @@ class Test_Downloads:
         p1 = WASAPI_TEXT.replace('"next":null', '"next":"http://test?page=2"')
         responses = [MockResponse200(p1), MockResponse200()]
         mock_session.return_value.get.side_effect = responses
-        downloads = wc.Downloads(WASAPI_URL, download=True, manifest=False)
+        downloads = wc.Downloads(WASAPI_URL, download=True)
         j_queue = downloads.get_q
         assert j_queue.qsize() == 4
         # Drain the JoinableQueue to avoid BrokenPipeError.
@@ -171,14 +171,23 @@ class Test_Downloads:
     def test_populate_downloads_no_get_q(self, mock_session):
         """Test downloads=False prevents get_q attribute existing."""
         mock_session.return_value.get.return_value = MockResponse200()
-        downloads = wc.Downloads(WASAPI_URL, download=False, manifest=False)
+        downloads = wc.Downloads(WASAPI_URL, download=False)
         with pytest.raises(AttributeError):
             getattr(downloads, 'get_q')
+
+    def test_populate_downloads_urls(self, mock_session):
+        """Test urls is populated with first location per file."""
+        mock_session.return_value.get.return_value = MockResponse200()
+        downloads = wc.Downloads(WASAPI_URL, download=False)
+        assert len(downloads.urls) == 2
+        for url in ['https://warcs.example.com/webdatafile/AIT-JOB256123-00000.warc.gz',
+                    'https://warcs.example.com/webdatafile/AIT-JOB256118-00000.warc.gz']:
+            assert url in downloads.urls
 
     def test_populate_downloads_manifest(self, mock_session):
         """Test the checksums dict is populated."""
         mock_session.return_value.get.return_value = MockResponse200()
-        downloads = wc.Downloads(WASAPI_URL, download=False, manifest=True)
+        downloads = wc.Downloads(WASAPI_URL, download=False)
         assert len(downloads.checksums)
         assert downloads.checksums['md5'] == [('61f818912d1f39bc9dd15d4b87461110',
                                                'AIT-JOB256123-00000.warc.gz'),
@@ -192,7 +201,7 @@ class Test_Downloads:
     def test_populate_downloads_manifest_destination(self, mock_session):
         """Test the checksums dict is populated with destination included."""
         mock_session.return_value.get.return_value = MockResponse200()
-        downloads = wc.Downloads(WASAPI_URL, download=False, manifest=True, destination='/tmp')
+        downloads = wc.Downloads(WASAPI_URL, download=False, destination='/tmp')
         assert len(downloads.checksums)
         assert downloads.checksums['md5'] == [('61f818912d1f39bc9dd15d4b87461110',
                                                '/tmp/AIT-JOB256123-00000.warc.gz'),
@@ -208,7 +217,7 @@ class Test_Downloads:
         mock_session.return_value.get.return_value = MockResponse200()
         sub_dir = 'downloads'
         dest = tmpdir.mkdir(sub_dir)
-        downloads = wc.Downloads(WASAPI_URL, download=False, manifest=True, destination=str(dest))
+        downloads = wc.Downloads(WASAPI_URL, download=False, destination=str(dest))
         downloads.generate_manifests()
         sub_dir_contents = dest.listdir()
         assert len(sub_dir_contents) == 2
@@ -220,19 +229,19 @@ class Test_Downloads:
         mock_session.return_value.get.return_value = MockResponse200()
         sub_dir = 'downloads'
         dest = tmpdir.mkdir(sub_dir)
-        downloads = wc.Downloads(WASAPI_URL, download=False, manifest=True, destination=str(dest))
+        downloads = wc.Downloads(WASAPI_URL, download=False, destination=str(dest))
         downloads.write_manifest_file('sha1')
         assert len(dest.listdir()) == 1
-        text = ('edef6bca652d75d0587ef411d5f028335341b074 {p}/AIT-JOB256123-00000.warc.gz\n'
-                '54a466421471ef7d8cb4d6bbfb85afd76022a378 {p}/ARCHIVEIT-JOB256118-00000.warc.gz\n')
-        assert dest.join('manifest-sha1.txt').read() == text.format(p=dest)
+        txt = ('edef6bca652d75d0587ef411d5f028335341b074\t{p}/AIT-JOB256123-00000.warc.gz\n'
+               '54a466421471ef7d8cb4d6bbfb85afd76022a378\t{p}/ARCHIVEIT-JOB256118-00000.warc.gz\n')
+        assert dest.join('manifest-sha1.txt').read() == txt.format(p=dest)
 
     def test_write_manifest_file_wrong_algorithm(self, mock_session, tmpdir):
         """Test writing a manifest file for an algorithm we don't have."""
         mock_session.return_value.get.return_value = MockResponse200()
         sub_dir = 'downloads'
         dest = tmpdir.mkdir(sub_dir)
-        downloads = wc.Downloads(WASAPI_URL, download=False, manifest=True, destination=str(dest))
+        downloads = wc.Downloads(WASAPI_URL, download=False, destination=str(dest))
         with pytest.raises(wc.WASAPIManifestError):
             downloads.write_manifest_file('sha2')
 
