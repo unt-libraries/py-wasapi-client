@@ -169,7 +169,7 @@ class Test_Downloads:
             assert field in q_item
 
     def test_populate_downloads_no_get_q(self, mock_session):
-        """Test downloads=False prevents get_q attribute existing."""
+        """Test download=False prevents get_q attribute existing."""
         mock_session.return_value.get.return_value = MockResponse200()
         downloads = wc.Downloads(WASAPI_URL, download=False)
         with pytest.raises(AttributeError):
@@ -465,7 +465,6 @@ class TestDownloader:
         with patch('wasapi_client.verify_file', return_value=True):
             p = wc.Downloader(get_q, result_q, log_q)
             p.start()
-            p.run()
             p.join()
         assert get_q.qsize() == 0
         assert result_q.qsize() == 2
