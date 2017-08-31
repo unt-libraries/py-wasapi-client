@@ -463,10 +463,9 @@ class TestDownloader:
         result_q = multiprocessing.Queue()
         log_q = multiprocessing.Queue()
         with patch('wasapi_client.verify_file', return_value=True):
-            p = wc.Downloader(get_q, result_q, log_q)
-            p.start()
-            p.join()
-        assert get_q.qsize() == 0
+            wc.Downloader(get_q, result_q, log_q).start()
+        # If the join doesn't block, the queue is fully processed.
+        get_q.join()
         assert result_q.qsize() == 2
         assert log_q.qsize() == 0
         for _ in (1, 2):
@@ -482,10 +481,9 @@ class TestDownloader:
         result_q = multiprocessing.Queue()
         log_q = multiprocessing.Queue()
 
-        p = wc.Downloader(get_q, result_q, log_q)
-        p.start()
-        p.join()
-        assert get_q.qsize() == 0
+        wc.Downloader(get_q, result_q, log_q).start()
+        # If the join doesn't block, the queue is fully processed.
+        get_q.join()
         assert result_q.qsize() == 2
         assert log_q.qsize() == 2
         for _ in (1, 2):
