@@ -4,7 +4,6 @@ import hashlib
 import json
 import multiprocessing
 from collections import OrderedDict
-from queue import Empty
 from unittest.mock import call, mock_open, patch
 
 import pytest
@@ -467,9 +466,8 @@ class TestDownloader:
             p = wc.Downloader(get_q, result_q, log_q)
             p.start()
             p.join()
-        # Check we have processed all of our GETs.
-        with pytest.raises(Empty):
-            get_q.get(block=False)
+        # If the join doesn't block, the queue is fully processed.
+        get_q.join()
         assert result_q.qsize() == 2
         assert log_q.qsize() == 0
         for _ in (1, 2):
@@ -488,9 +486,8 @@ class TestDownloader:
         p = wc.Downloader(get_q, result_q, log_q)
         p.start()
         p.join()
-        # Check we have processed all of our GETs.
-        with pytest.raises(Empty):
-            get_q.get(block=False)
+        # If the join doesn't block, the queue is fully processed.
+        get_q.join()
         assert result_q.qsize() == 2
         assert log_q.qsize() == 2
         for _ in (1, 2):
