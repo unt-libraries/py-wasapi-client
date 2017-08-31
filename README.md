@@ -52,7 +52,7 @@ optional arguments:
                         location for storing downloaded files
   -l LOG, --log LOG     file to which logging should be written
   -n, --no-manifest     do not generate checksum files (ignored when used in
-                        combination with --manifest
+                        combination with --manifest)
   -u USER, --user USER  username for API authentication
   -v, --verbose         log verbosely; -v is INFO, -vv is DEBUG
   -c, --count           print number of files for download and exit
@@ -70,11 +70,9 @@ query parameters:
   --filename FILENAME   exact webdata filename to download
   --crawl CRAWL         crawl job identifier
   --crawl-time-after CRAWL_TIME_AFTER
-                        request files with date of creation during a crawl job
-                        after this date
+                        request files with date of creation after this date
   --crawl-time-before CRAWL_TIME_BEFORE
-                        request files with date of creation during a crawl job
-                        before this date
+                        request files with date of creation before this date
   --crawl-start-after CRAWL_START_AFTER
                         request files from crawl jobs starting after this date
   --crawl-start-before CRAWL_START_BEFORE
