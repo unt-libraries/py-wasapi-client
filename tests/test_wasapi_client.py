@@ -3,6 +3,7 @@
 import hashlib
 import json
 import multiprocessing
+import os
 from collections import OrderedDict
 from unittest.mock import call, mock_open, patch
 
@@ -201,16 +202,20 @@ class Test_Downloads:
     def test_populate_downloads_manifest_destination(self, mock_session):
         """Test the checksums dict is populated with destination included."""
         mock_session.return_value.get.return_value = MockResponse200()
-        downloads = wc.Downloads(WASAPI_URL, download=False, destination='/tmp')
+        downloads = wc.Downloads(WASAPI_URL, download=False, destination='{}tmp'.format(os.sep))
         assert len(downloads.checksums)
-        assert downloads.checksums['md5'] == [('61f818912d1f39bc9dd15d4b87461110',
-                                               '/tmp/AIT-JOB256123-00000.warc.gz'),
-                                              ('748120fd9672b22df5942bb44e9cde81',
-                                               '/tmp/ARCHIVEIT-JOB256118-00000.warc.gz')]
-        assert downloads.checksums['sha1'] == [('edef6bca652d75d0587ef411d5f028335341b074',
-                                                '/tmp/AIT-JOB256123-00000.warc.gz'),
-                                               ('54a466421471ef7d8cb4d6bbfb85afd76022a378',
-                                                '/tmp/ARCHIVEIT-JOB256118-00000.warc.gz')]
+        assert downloads.checksums['md5'] == [
+            ('61f818912d1f39bc9dd15d4b87461110',
+             os.path.normpath('/tmp/AIT-JOB256123-00000.warc.gz')),
+            ('748120fd9672b22df5942bb44e9cde81',
+             os.path.normpath('/tmp/ARCHIVEIT-JOB256118-00000.warc.gz'))
+        ]
+        assert downloads.checksums['sha1'] == [
+            ('edef6bca652d75d0587ef411d5f028335341b074',
+             os.path.normpath('/tmp/AIT-JOB256123-00000.warc.gz')),
+            ('54a466421471ef7d8cb4d6bbfb85afd76022a378',
+             os.path.normpath('/tmp/ARCHIVEIT-JOB256118-00000.warc.gz'))
+        ]
 
     def test_populate_downloads_generate_manifest(self, mock_session, tmpdir):
         """Test checksum files are created for all algorithms."""
@@ -232,9 +237,11 @@ class Test_Downloads:
         downloads = wc.Downloads(WASAPI_URL, download=False, destination=str(dest))
         downloads.write_manifest_file('sha1')
         assert len(dest.listdir()) == 1
-        txt = ('edef6bca652d75d0587ef411d5f028335341b074\t{p}/AIT-JOB256123-00000.warc.gz\n'
-               '54a466421471ef7d8cb4d6bbfb85afd76022a378\t{p}/ARCHIVEIT-JOB256118-00000.warc.gz\n')
-        assert dest.join('manifest-sha1.txt').read() == txt.format(p=dest)
+        txt = (
+            'edef6bca652d75d0587ef411d5f028335341b074\t{p}{s}AIT-JOB256123-00000.warc.gz\n'
+            '54a466421471ef7d8cb4d6bbfb85afd76022a378\t{p}{s}ARCHIVEIT-JOB256118-00000.warc.gz\n'
+        )
+        assert dest.join('manifest-sha1.txt').read() == txt.format(p=dest, s=os.sep)
 
     def test_write_manifest_file_wrong_algorithm(self, mock_session, tmpdir):
         """Test writing a manifest file for an algorithm we don't have."""
@@ -463,7 +470,9 @@ class TestDownloader:
         result_q = multiprocessing.Queue()
         log_q = multiprocessing.Queue()
         with patch('wasapi_client.verify_file', return_value=True):
-            wc.Downloader(get_q, result_q, log_q).start()
+            p = wc.Downloader(get_q, result_q, log_q)
+            p.start()
+            p.run()
         # If the join doesn't block, the queue is fully processed.
         get_q.join()
         assert result_q.qsize() == 2
@@ -480,8 +489,9 @@ class TestDownloader:
             get_q.put(self.FILE_DATA)
         result_q = multiprocessing.Queue()
         log_q = multiprocessing.Queue()
-
-        wc.Downloader(get_q, result_q, log_q).start()
+        p = wc.Downloader(get_q, result_q, log_q)
+        p.start()
+        p.run()
         # If the join doesn't block, the queue is fully processed.
         get_q.join()
         assert result_q.qsize() == 2
