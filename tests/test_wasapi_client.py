@@ -404,8 +404,8 @@ class Test_verify_file:
 
 
 class Test_calculate_sum:
-    @pytest.mark.xfail(sys.version_info <= (3, 4, 3), reason=('bug via mock_open '
-                       'https://github.com/python/cpython/commit/86b34d'))
+    @pytest.mark.skipif(sys.version_info <= (3, 4, 3), reason=('bug via mock_open '
+                        'https://github.com/python/cpython/commit/86b34d'))
     def test_calculate_sum(self):
         data = 'data from file'.encode('utf-8')
         with patch('builtins.open', mock_open(read_data=data)):
