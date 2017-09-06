@@ -404,7 +404,7 @@ class Test_verify_file:
 
 class Test_calculate_sum:
     def test_calculate_sum(self):
-        data = b'data from file'
+        data = 'data from file'.encode('utf-8')
         with patch('builtins.open', mock_open(read_data=data)):
             checksum = wc.calculate_sum(hashlib.sha1, 'dummy/path')
         assert checksum == hashlib.sha1(data).hexdigest()
