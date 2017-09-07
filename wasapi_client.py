@@ -11,7 +11,11 @@ import os
 import requests
 import sys
 from collections import defaultdict
-from json.decoder import JSONDecodeError
+try:
+    from json.decoder import JSONDecodeError
+except:
+    class JSONDecodeError(ValueError):
+        pass
 from queue import Empty
 from urllib.parse import urlencode
 
@@ -78,7 +82,7 @@ def get_webdata(webdata_uri, session):
                                                               response.reason))
     try:
         return response.json()
-    except JSONDecodeError as err:
+    except (JSONDecodeError, ValueError) as err:
         sys.exit('Non-JSON response from {}'.format(webdata_uri))
 
 

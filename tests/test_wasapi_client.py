@@ -4,6 +4,7 @@ import hashlib
 import json
 import multiprocessing
 import os
+import sys
 from collections import OrderedDict
 from unittest.mock import call, mock_open, patch
 
@@ -403,9 +404,11 @@ class Test_verify_file:
 
 
 class Test_calculate_sum:
+    @pytest.mark.skipif(sys.version_info < (3, 4, 4), reason=('bug via mock_open '
+                        'https://github.com/python/cpython/commit/86b34d'))
     def test_calculate_sum(self):
-        data = b'data from file'
-        with patch('wasapi_client.open', mock_open(read_data=data)):
+        data = 'data from file'.encode('utf-8')
+        with patch('builtins.open', mock_open(read_data=data)):
             checksum = wc.calculate_sum(hashlib.sha1, 'dummy/path')
         assert checksum == hashlib.sha1(data).hexdigest()
 
