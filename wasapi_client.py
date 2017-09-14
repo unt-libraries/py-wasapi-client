@@ -296,7 +296,7 @@ class Downloader(multiprocessing.Process):
         """Download files from the queue until there are no more.
 
         Gets a file's data off the queue, attempts to download the
-        the file, and puts the result onto another queue.
+        file, and puts the result onto another queue.
 
         A get_q item looks like:
          {'locations': ['http://...', 'http://...'],
