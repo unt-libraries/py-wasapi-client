@@ -177,7 +177,7 @@ class Downloads:
                                      'manifest-{}.txt'.format(algorithm))
         with open(manifest_path, 'w') as manifest_f:
             for checksum, path in self.checksums[algorithm]:
-                manifest_f.write('{}\t{}\n'.format(checksum, path))
+                manifest_f.write('{}  {}\n'.format(checksum, path))
 
 
 def download_file(file_data, session, output_path):
