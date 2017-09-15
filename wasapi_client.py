@@ -75,7 +75,7 @@ def get_webdata(webdata_uri, session):
         response = session.get(webdata_uri)
     except requests.exceptions.ConnectionError as err:
         sys.exit('Could not connect at {}:\n{}'.format(webdata_uri, err))
-    MAIN_LOGGER.debug('requesting {}'.format(webdata_uri))
+    MAIN_LOGGER.info('requesting {}'.format(webdata_uri))
     if response.status_code == 403:
         sys.exit('Verify user/password for {}:\n{} {}'.format(webdata_uri,
                                                               response.status_code,
