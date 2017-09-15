@@ -143,10 +143,7 @@ class Downloads:
         self.populate_downloads()
 
     def populate_downloads(self):
-        """Repeat webdata requests to gather downloadable file info.
-
-        Returns a queue containing file locations and checksums.
-        """
+        """Repeat webdata requests to gather downloadable file info."""
         session = make_session(self.auth)
         current_uri = self.page_uri
         while current_uri:
