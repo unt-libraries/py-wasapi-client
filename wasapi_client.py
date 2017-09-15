@@ -226,7 +226,8 @@ def verify_file(checksums, file_path):
             logging.info('Checksum success at: {}'.format(file_path))
             return True
         else:
-            logging.error('Checksum mismatch for {}: expected {}, got {}'.format(file_path,
+            logging.error('Checksum {} mismatch for {}: expected {}, got {}'.format(algorithm,
+                                                                                 file_path,
                                                                                  value,
                                                                                  digest))
             return False
