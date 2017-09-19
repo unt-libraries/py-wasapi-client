@@ -414,20 +414,19 @@ def _parse_args(args=sys.argv[1:]):
                              help='crawl job identifier')
     param_group.add_argument('--crawl-time-after',
                              action=SetQueryParametersAction,
-                             help='request files with date of creation '
-                                  'after this date')
+                             help='request files created on or after this '
+                                  'date/time')
     param_group.add_argument('--crawl-time-before',
                              action=SetQueryParametersAction,
-                             help='request files with date of creation '
-                                  'before this date')
+                             help='request files created before this date/time')
     param_group.add_argument('--crawl-start-after',
                              action=SetQueryParametersAction,
-                             help='request files from crawl jobs starting '
-                                  'after this date')
+                             help='request files from crawl jobs starting on '
+                                  'or after this date/time')
     param_group.add_argument('--crawl-start-before',
                              action=SetQueryParametersAction,
                              help='request files from crawl jobs starting '
-                                  'before this date')
+                                  'before this date/time')
     return parser.parse_args(args)
 
 
