@@ -12,3 +12,9 @@ build/
 dist/
 .tox/*
 __pycache__/*
+
+# virtualenv
+bin/
+include/
+lib/
+pip-selfcheck.json

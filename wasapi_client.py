@@ -75,7 +75,7 @@ def get_webdata(webdata_uri, session):
         response = session.get(webdata_uri)
     except requests.exceptions.ConnectionError as err:
         sys.exit('Could not connect at {}:\n{}'.format(webdata_uri, err))
-    MAIN_LOGGER.debug('requesting {}'.format(webdata_uri))
+    MAIN_LOGGER.info('requesting {}'.format(webdata_uri))
     if response.status_code == 403:
         sys.exit('Verify user/password for {}:\n{} {}'.format(webdata_uri,
                                                               response.status_code,
@@ -143,10 +143,7 @@ class Downloads:
         self.populate_downloads()
 
     def populate_downloads(self):
-        """Repeat webdata requests to gather downloadable file info.
-
-        Returns a queue containing file locations and checksums.
-        """
+        """Repeat webdata requests to gather downloadable file info."""
         session = make_session(self.auth)
         current_uri = self.page_uri
         while current_uri:
@@ -177,7 +174,7 @@ class Downloads:
                                      'manifest-{}.txt'.format(algorithm))
         with open(manifest_path, 'w') as manifest_f:
             for checksum, path in self.checksums[algorithm]:
-                manifest_f.write('{}\t{}\n'.format(checksum, path))
+                manifest_f.write('{}  {}\n'.format(checksum, path))
 
 
 def download_file(file_data, session, output_path):
@@ -229,9 +226,10 @@ def verify_file(checksums, file_path):
             logging.info('Checksum success at: {}'.format(file_path))
             return True
         else:
-            logging.error('Checksum mismatch for {}: expected {}, got {}'.format(file_path,
-                                                                                 value,
-                                                                                 digest))
+            logging.error('Checksum {} mismatch for {}: expected {}, got {}'.format(algorithm,
+                                                                                    file_path,
+                                                                                    value,
+                                                                                    digest))
             return False
     # We didn't find a compatible algorithm.
     return False
@@ -296,7 +294,7 @@ class Downloader(multiprocessing.Process):
         """Download files from the queue until there are no more.
 
         Gets a file's data off the queue, attempts to download the
-        the file, and puts the result onto another queue.
+        file, and puts the result onto another queue.
 
         A get_q item looks like:
          {'locations': ['http://...', 'http://...'],
@@ -416,20 +414,19 @@ def _parse_args(args=sys.argv[1:]):
                              help='crawl job identifier')
     param_group.add_argument('--crawl-time-after',
                              action=SetQueryParametersAction,
-                             help='request files with date of creation '
-                                  'after this date')
+                             help='request files created on or after this '
+                                  'date/time')
     param_group.add_argument('--crawl-time-before',
                              action=SetQueryParametersAction,
-                             help='request files with date of creation '
-                                  'before this date')
+                             help='request files created before this date/time')
     param_group.add_argument('--crawl-start-after',
                              action=SetQueryParametersAction,
-                             help='request files from crawl jobs starting '
-                                  'after this date')
+                             help='request files from crawl jobs starting on '
+                                  'or after this date/time')
     param_group.add_argument('--crawl-start-before',
                              action=SetQueryParametersAction,
                              help='request files from crawl jobs starting '
-                                  'before this date')
+                                  'before this date/time')
     return parser.parse_args(args)
 
 
