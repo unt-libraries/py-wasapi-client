@@ -239,8 +239,8 @@ class Test_Downloads:
         downloads.write_manifest_file('sha1')
         assert len(dest.listdir()) == 1
         txt = (
-            'edef6bca652d75d0587ef411d5f028335341b074\t{p}{s}AIT-JOB256123-00000.warc.gz\n'
-            '54a466421471ef7d8cb4d6bbfb85afd76022a378\t{p}{s}ARCHIVEIT-JOB256118-00000.warc.gz\n'
+            'edef6bca652d75d0587ef411d5f028335341b074  {p}{s}AIT-JOB256123-00000.warc.gz\n'
+            '54a466421471ef7d8cb4d6bbfb85afd76022a378  {p}{s}ARCHIVEIT-JOB256118-00000.warc.gz\n'
         )
         assert dest.join('manifest-sha1.txt').read() == txt.format(p=dest, s=os.sep)
 
@@ -381,12 +381,16 @@ class Test_verify_file:
     def test_verify_file_checksum_mismatch(self, mock_calc_sum):
         """Test calculated checksum does not match the expected."""
         checksum = '33304d104f95d826da40079bad2400dc4d005403'
-        checksums = {'sha1': checksum}
+        algorithm = 'sha1'
+        path = 'dummy/path'
+        checksums = {algorithm: checksum}
         mock_calc_sum.return_value = checksum + 'notmatching'
         with patch('wasapi_client.logging', autospec=True) as mock_logging:
-            assert not wc.verify_file(checksums, 'dummy/path')
-        msg = 'Checksum mismatch for dummy/path: expected {}, got {}notmatching'.format(checksum,
-                                                                                        checksum)
+            assert not wc.verify_file(checksums, path)
+        msg = 'Checksum {} mismatch for {}: expected {}, got {}notmatching'.format(algorithm,
+                                                                                   path,
+                                                                                   checksum,
+                                                                                   checksum)
         mock_logging.error.assert_called_once_with(msg)
 
     @patch('wasapi_client.calculate_sum')

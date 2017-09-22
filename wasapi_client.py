@@ -227,9 +227,9 @@ def verify_file(checksums, file_path):
             return True
         else:
             logging.error('Checksum {} mismatch for {}: expected {}, got {}'.format(algorithm,
-                                                                                 file_path,
-                                                                                 value,
-                                                                                 digest))
+                                                                                    file_path,
+                                                                                    value,
+                                                                                    digest))
             return False
     # We didn't find a compatible algorithm.
     return False
