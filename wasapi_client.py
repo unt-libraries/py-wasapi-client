@@ -365,7 +365,7 @@ def _parse_args(args=sys.argv[1:]):
                         action='store_true',
                         dest='skip_manifest',
                         help='do not generate checksum files (ignored'
-                             ' when used in combination with --manifest')
+                             ' when used in combination with --manifest)')
     parser.add_argument('-u',
                         '--user',
                         dest='user',
@@ -499,8 +499,15 @@ def main():
                           destination=args.destination)
     get_q = downloads.get_q
     result_q = manager.Queue()
-    for _ in range(args.processes):
-        Downloader(get_q, result_q, log_q, log_level, auth, args.destination).start()
+
+    download_processes = []
+    num_processes = min(args.processes, get_q.qsize())
+    for _ in range(num_processes):
+        dp = Downloader(get_q, result_q, log_q, log_level, auth, args.destination)
+        dp.start()
+        download_processes.append(dp)
+    for dp in download_processes:
+        dp.join()
     get_q.join()
 
     listener.stop()
