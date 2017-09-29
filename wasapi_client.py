@@ -19,16 +19,15 @@ except:
 from queue import Empty
 from urllib.parse import urlencode
 
+NAME = 'wasapi_client' if __name__ == '__main__' else __name__
 
-NAME = 'wasapi-client' if __name__ == '__main__' else __name__
-
-MAIN_LOGGER = logging.getLogger('main')
+LOGGER = logging.getLogger(NAME)
 
 READ_LIMIT = 1024 * 512
 
 
-def do_listener_logging(log_q, path=''):
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+def start_listener_logging(log_q, path=''):
+    formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s')
     if path:
         handler = logging.FileHandler(filename=path)
     else:
@@ -39,16 +38,27 @@ def do_listener_logging(log_q, path=''):
     listener = logging.handlers.QueueListener(log_q, handler)
     listener.start()
 
-    # Add the handler to the logger, so records from this process are written.
-    logger = logging.getLogger(NAME)
-    logger.addHandler(handler)
     return listener
 
 
-def configure_worker_logging(log_q, log_level=logging.ERROR, logger_name=None):
-    logger = logging.getLogger(logger_name)
-    logger.setLevel(log_level)
-    logger.addHandler(logging.handlers.QueueHandler(log_q))
+def configure_main_logging(log_q, log_level=logging.ERROR):
+    """Put a handler on the root logger.
+
+    This allows handling log records from imported modules.
+    """
+    root = logging.getLogger()
+    root.addHandler(logging.handlers.QueueHandler(log_q))
+    root.setLevel(log_level)
+
+
+def configure_worker_logging(log_q, log_level=logging.ERROR):
+    """Configure logging for worker processes."""
+    # Remove any existing handlers.
+    LOGGER.handlers = []
+    # Prevent root logger duplicating messages.
+    LOGGER.propagate = False
+    LOGGER.addHandler(logging.handlers.QueueHandler(log_q))
+    LOGGER.setLevel(log_level)
 
 
 class WASAPIDownloadError(Exception):
@@ -75,7 +85,7 @@ def get_webdata(webdata_uri, session):
         response = session.get(webdata_uri)
     except requests.exceptions.ConnectionError as err:
         sys.exit('Could not connect at {}:\n{}'.format(webdata_uri, err))
-    MAIN_LOGGER.info('requesting {}'.format(webdata_uri))
+    LOGGER.info('requesting {}'.format(webdata_uri))
     if response.status_code == 403:
         sys.exit('Verify user/password for {}:\n{} {}'.format(webdata_uri,
                                                               response.status_code,
@@ -188,13 +198,13 @@ def download_file(file_data, session, output_path):
             try:
                 write_file(response, output_path)
             except OSError as err:
-                logging.error('{}: {}'.format(location, str(err)))
+                LOGGER.error('{}: {}'.format(location, str(err)))
                 break
             # Successful download; don't try alternate locations.
-            logging.info(msg)
+            LOGGER.info(msg)
             return None
         else:
-            logging.error(msg)
+            LOGGER.error(msg)
     # We didn't download successfully; raise error.
     msg = 'FAILED to download {} from {}'.format(file_data['filename'],
                                                  file_data['locations'])
@@ -219,17 +229,17 @@ def verify_file(checksums, file_path):
         hash_function = getattr(hashlib, algorithm, None)
         if not hash_function:
             # The hash algorithm provided is not supported by hashlib.
-            logging.debug('{} is unsupported'.format(algorithm))
+            LOGGER.debug('{} is unsupported'.format(algorithm))
             continue
         digest = calculate_sum(hash_function, file_path)
         if digest == value:
-            logging.info('Checksum success at: {}'.format(file_path))
+            LOGGER.info('Checksum success at: {}'.format(file_path))
             return True
         else:
-            logging.error('Checksum {} mismatch for {}: expected {}, got {}'.format(algorithm,
-                                                                                    file_path,
-                                                                                    value,
-                                                                                    digest))
+            LOGGER.error('Checksum {} mismatch for {}: expected {}, got {}'.format(algorithm,
+                                                                                   file_path,
+                                                                                   value,
+                                                                                   digest))
             return False
     # We didn't find a compatible algorithm.
     return False
@@ -312,7 +322,7 @@ class Downloader(multiprocessing.Process):
             try:
                 download_file(file_data, self.session, output_path)
             except WASAPIDownloadError as err:
-                logging.error(str(err))
+                LOGGER.error(str(err))
             else:
                 # If we download the file without error, verify the checksum.
                 if verify_file(file_data['checksums'], output_path):
@@ -365,7 +375,7 @@ def _parse_args(args=sys.argv[1:]):
                         action='store_true',
                         dest='skip_manifest',
                         help='do not generate checksum files (ignored'
-                             ' when used in combination with --manifest')
+                             ' when used in combination with --manifest)')
     parser.add_argument('-u',
                         '--user',
                         dest='user',
@@ -443,7 +453,7 @@ def main():
     manager = multiprocessing.Manager()
     log_q = manager.Queue()
     try:
-        listener = do_listener_logging(log_q, args.log)
+        listener = start_listener_logging(log_q, args.log)
     except OSError as err:
         print('Could not open file for logging:', err)
         sys.exit(1)
@@ -453,7 +463,7 @@ def main():
         log_level = [logging.ERROR, logging.INFO, logging.DEBUG][args.verbose]
     except IndexError:
         log_level = logging.DEBUG
-    configure_worker_logging(log_q, log_level, 'main')
+    configure_main_logging(log_q, log_level)
 
     # Generate query string for the webdata request.
     try:
@@ -499,8 +509,15 @@ def main():
                           destination=args.destination)
     get_q = downloads.get_q
     result_q = manager.Queue()
-    for _ in range(args.processes):
-        Downloader(get_q, result_q, log_q, log_level, auth, args.destination).start()
+
+    download_processes = []
+    num_processes = min(args.processes, get_q.qsize())
+    for _ in range(num_processes):
+        dp = Downloader(get_q, result_q, log_q, log_level, auth, args.destination)
+        dp.start()
+        download_processes.append(dp)
+    for dp in download_processes:
+        dp.join()
     get_q.join()
 
     listener.stop()

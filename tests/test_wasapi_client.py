@@ -385,13 +385,13 @@ class Test_verify_file:
         path = 'dummy/path'
         checksums = {algorithm: checksum}
         mock_calc_sum.return_value = checksum + 'notmatching'
-        with patch('wasapi_client.logging', autospec=True) as mock_logging:
+        with patch('wasapi_client.LOGGER', autospec=True) as mock_logger:
             assert not wc.verify_file(checksums, path)
         msg = 'Checksum {} mismatch for {}: expected {}, got {}notmatching'.format(algorithm,
                                                                                    path,
                                                                                    checksum,
                                                                                    checksum)
-        mock_logging.error.assert_called_once_with(msg)
+        mock_logger.error.assert_called_once_with(msg)
 
     @patch('wasapi_client.calculate_sum')
     def test_verify_file_one_supported_algorithm(self, mock_calc_sum):
@@ -400,11 +400,11 @@ class Test_verify_file:
         checksums = OrderedDict([('abc', 'algorithm_unsupported'),
                                  ('sha1', checksum)])
         mock_calc_sum.return_value = checksum
-        with patch('wasapi_client.logging', autospec=True) as mock_logging:
+        with patch('wasapi_client.LOGGER', autospec=True) as mock_logger:
             assert wc.verify_file(checksums, 'dummy/path')
         # Check that unsupported algorithm was tried.
-        mock_logging.debug.assert_called_once_with('abc is unsupported')
-        mock_logging.info.assert_called_once_with('Checksum success at: dummy/path')
+        mock_logger.debug.assert_called_once_with('abc is unsupported')
+        mock_logger.info.assert_called_once_with('Checksum success at: dummy/path')
 
 
 class Test_calculate_sum:
