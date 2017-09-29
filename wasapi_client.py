@@ -496,6 +496,7 @@ def main():
                               destination=args.destination)
         downloads.generate_manifests()
         sys.exit()
+
     # Print the URLs for files that can be downloaded; don't download them.
     if args.urls:
         downloads = Downloads(webdata_uri, auth, download=False,
@@ -503,10 +504,16 @@ def main():
         for url in downloads.urls:
             print(url)
         sys.exit()
+
     # Process webdata requests to fill webdata file queue.
-    # Then start downloading with multiple processes.
     downloads = Downloads(webdata_uri, auth, download=True,
                           destination=args.destination)
+
+    # Write manifest file(s).
+    if not args.skip_manifest:
+        downloads.generate_manifests()
+
+    # Download with multiple processes.
     get_q = downloads.get_q
     result_q = manager.Queue()
 
@@ -522,8 +529,6 @@ def main():
 
     listener.stop()
 
-    if not args.skip_manifest:
-        downloads.generate_manifests()
     print(generate_report(result_q))
 
 
