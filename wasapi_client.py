@@ -1,7 +1,8 @@
 #!/usr/bin/env python
 
 import argparse
-import getpass
+import atexit
+import configparser
 import hashlib
 import logging
 import logging.handlers
@@ -24,6 +25,8 @@ NAME = 'wasapi_client' if __name__ == '__main__' else __name__
 LOGGER = logging.getLogger(NAME)
 
 READ_LIMIT = 1024 * 512
+
+PROFILE_PATH = os.path.join(os.path.expanduser('~'), '.wasapi-client')
 
 
 def start_listener_logging(log_q, path=''):
@@ -376,15 +379,14 @@ def _parse_args(args=sys.argv[1:]):
                         dest='skip_manifest',
                         help='do not generate checksum files (ignored'
                              ' when used in combination with --manifest)')
-    parser.add_argument('-u',
-                        '--user',
-                        dest='user',
-                        help='username for API authentication')
     parser.add_argument('-v',
                         '--verbose',
                         action='count',
                         default=0,
                         help='log verbosely; -v is INFO, -vv is DEBUG')
+    parser.add_argument('--profile',
+                        dest='profile',
+                        help='profile to use for API authentication')
 
     out_group = parser.add_mutually_exclusive_group()
     out_group.add_argument('-c',
@@ -458,6 +460,11 @@ def main():
         print('Could not open file for logging:', err)
         sys.exit(1)
 
+    @atexit.register
+    def stop_listener_logging():
+        """Stop listener when exiting program normally."""
+        listener.stop()
+
     # Configure a logger for the main process.
     try:
         log_level = [logging.ERROR, logging.INFO, logging.DEBUG][args.verbose]
@@ -475,9 +482,19 @@ def main():
 
     # Generate authentication tuple for the API calls.
     auth = None
-    if args.user:
-        auth = (args.user, getpass.getpass())
-
+    if args.profile:
+        config = configparser.ConfigParser()
+        try:
+            config.readfp(open(PROFILE_PATH))
+            auth = (config.get(args.profile, 'username'),
+                    config.get(args.profile, 'password'))
+        except (OSError,
+                configparser.NoSectionError,
+                configparser.NoOptionError) as err:
+            sys.exit('{}: please create config file to supply API credentials with format:\n\n'
+                     '[{}]\n'
+                     'username = someuser\n'
+                     'password = secretpasswd\n'.format(err, args.profile))
     # If user wants the size, don't download files.
     if args.size:
         count, size = get_files_size(webdata_uri, auth)
@@ -526,8 +543,6 @@ def main():
     for dp in download_processes:
         dp.join()
     get_q.join()
-
-    listener.stop()
 
     print(generate_report(result_q))
 
