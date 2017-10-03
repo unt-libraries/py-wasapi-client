@@ -309,6 +309,7 @@ class Test_download_file:
         'locations': ['http://loc1/blah.warc.gz',
                       'http://loc2/blah.warc.gz'],
         'filename': 'blah.warc.gz',
+        'size': 123456,
         'checksums': {'sha1': '33304d104f95d826da40079bad2400dc4d005403',
                       'md5': '62f87a969af0dd857ecd6c3e7fde6aed'}
     }
@@ -361,6 +362,47 @@ class Test_download_file:
         # Check we only tried downloading files until successful download.
         mock_get.assert_called_once_with(locations[0], stream=True)
         mock_write_file.assert_called_once_with(mock_200, filename)
+
+    def test_download_check_exists_true(self):
+        """Test a file already existing on the filesystem is not downloaded."""
+        with patch('wasapi_client.check_exists', return_value=True), \
+                patch('requests.Session', autospec=True) as mock_session:
+            filename = self.FILE_DATA['filename']
+            wc.download_file(self.FILE_DATA, mock_session, filename)
+        assert not mock_session.get.called
+
+
+class Test_check_exists:
+    def test_check_exists_return_true(self):
+        checksums = {'sha1': '33304d104f95d826da40079bad2400dc4d005403'}
+        with patch('os.path.isfile', return_value=True), \
+                patch('os.path.getsize', return_value=123456), \
+                patch('wasapi_client.verify_file', return_value=True) as mock_verify:
+            assert wc.check_exists('path', 123456, checksums)
+            mock_verify.assert_called_once_with(checksums, 'path')
+
+    @patch('os.path.isfile', return_value=False)
+    @patch('os.path.getsize')
+    def test_check_exists_no_file(self, mock_getsize, mock_isfile):
+        assert not wc.check_exists('path', 123456, {})
+        mock_isfile.assert_called_once_with('path')
+        assert not mock_getsize.called
+
+    @patch('os.path.isfile', return_value=True)
+    @patch('os.path.getsize', return_value=123456)
+    @patch('wasapi_client.verify_file')
+    def test_check_exists_file_size_mismatch(self, mock_verify, mock_getsize, mock_isfile):
+        assert not wc.check_exists('path', 789, {})
+        mock_isfile.assert_called_once_with('path')
+        mock_getsize.assert_called_once_with('path')
+        assert not mock_verify.called
+
+    def test_check_exists_checksum_fail(self):
+        with patch('os.path.isfile', return_value=True), \
+                patch('os.path.getsize', return_value=123456), \
+                patch('wasapi_client.verify_file', return_value=False) as mock_verify:
+            assert not wc.check_exists('path', 123456, {})
+            mock_verify.assert_called_once_with({}, 'path')
 
 
 class Test_verify_file:
@@ -464,6 +506,7 @@ class TestDownloader:
         'locations': ['http://loc1/blah.warc.gz',
                       'http://loc2/blah.warc.gz'],
         'filename': 'blah.warc.gz',
+        'size': 123456,
         'checksums': {'sha1': '33304d104f95d826da40079bad2400dc4d005403',
                       'md5': '62f87a969af0dd857ecd6c3e7fde6aed'}
     }

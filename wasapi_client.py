@@ -170,7 +170,8 @@ class Downloads:
                 if self.download:
                     self.get_q.put({'locations': f['locations'],
                                     'filename': f['filename'],
-                                    'checksums': f['checksums']})
+                                    'checksums': f['checksums'],
+                                    'size': f['size']})
             current_uri = webdata.get('next', None)
         session.close()
 
@@ -192,6 +193,10 @@ class Downloads:
 
 def download_file(file_data, session, output_path):
     """Download webdata file to disk."""
+    if check_exists(output_path, file_data['size'], file_data['checksums']):
+        # Don't download the file if it already exists.
+        LOGGER.info('Verified {} already exists'.format(file_data['filename']))
+        return None
     for location in file_data['locations']:
         response = session.get(location, stream=True)
         msg = '{}: {} {}'.format(location,
@@ -212,6 +217,15 @@ def download_file(file_data, session, output_path):
     msg = 'FAILED to download {} from {}'.format(file_data['filename'],
                                                  file_data['locations'])
     raise WASAPIDownloadError(msg)
+
+
+def check_exists(path, size, checksums):
+    """Check if file with matching size and checksum exists."""
+    if not os.path.isfile(path):
+        return False
+    if not os.path.getsize(path) == size:
+        return False
+    return verify_file(checksums, path)
 
 
 def write_file(response, output_path=''):
@@ -312,6 +326,7 @@ class Downloader(multiprocessing.Process):
         A get_q item looks like:
          {'locations': ['http://...', 'http://...'],
           'filename': 'blah.warc.gz',
+          'size': 123456,
           'checksums': {'sha1': '33304d104f95d826da40079bad2400dc4d005403',
                         'md5': '62f87a969af0dd857ecd6c3e7fde6aed'}}
         """
