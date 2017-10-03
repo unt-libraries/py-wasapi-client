@@ -54,7 +54,7 @@ optional arguments:
   -n, --no-manifest     do not generate checksum files (ignored when used in
                         combination with --manifest)
   -v, --verbose         log verbosely; -v is INFO, -vv is DEBUG
-  --profile PROFILE     profile to use
+  --profile PROFILE     profile to use for API authentication
   -c, --count           print number of files for download and exit
   -m, --manifest        generate checksum files only and exit
   -p PROCESSES, --processes PROCESSES
