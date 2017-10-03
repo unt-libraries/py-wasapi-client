@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 
 import argparse
-import getpass
+import configparser
 import hashlib
 import logging
 import logging.handlers
@@ -24,6 +24,8 @@ NAME = 'wasapi_client' if __name__ == '__main__' else __name__
 LOGGER = logging.getLogger(NAME)
 
 READ_LIMIT = 1024 * 512
+
+PROFILE_PATH = os.path.join(os.path.expanduser("~"), ".wasapi-client")
 
 
 def start_listener_logging(log_q, path=''):
@@ -376,15 +378,14 @@ def _parse_args(args=sys.argv[1:]):
                         dest='skip_manifest',
                         help='do not generate checksum files (ignored'
                              ' when used in combination with --manifest)')
-    parser.add_argument('-u',
-                        '--user',
-                        dest='user',
-                        help='username for API authentication')
     parser.add_argument('-v',
                         '--verbose',
                         action='count',
                         default=0,
                         help='log verbosely; -v is INFO, -vv is DEBUG')
+    parser.add_argument('--profile',
+                        dest='profile',
+                        help='profile to use')
 
     out_group = parser.add_mutually_exclusive_group()
     out_group.add_argument('-c',
@@ -475,8 +476,11 @@ def main():
 
     # Generate authentication tuple for the API calls.
     auth = None
-    if args.user:
-        auth = (args.user, getpass.getpass())
+    if args.profile:
+        config = configparser.ConfigParser()
+        config.readfp(open(PROFILE_PATH))
+        auth = (config.get(args.profile, "username"),
+                config.get(args.profile, "password"))
 
     # If user wants the size, don't download files.
     if args.size:
