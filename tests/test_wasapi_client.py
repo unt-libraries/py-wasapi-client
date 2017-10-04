@@ -543,7 +543,7 @@ class TestDownloader:
             assert result_q.get() == ('failure', self.filename)
 
     def test_run_file_already_verified(self):
-        """Test downloader when file was verified by `download_file`."""
+        """Test a downloaded file is not verified twice."""
         return_data_file = wc.DataFile(self.locations, self.filename, self.checksums, self.size)
         return_data_file.verified = True
         # Create a queue holding two sets of file data.
