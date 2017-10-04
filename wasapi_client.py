@@ -168,9 +168,8 @@ class Downloads:
                 for algorithm, value in f['checksums'].items():
                     self.checksums[algorithm].append((value, path))
                 if self.download:
-                    self.get_q.put({'locations': f['locations'],
-                                    'filename': f['filename'],
-                                    'checksums': f['checksums']})
+                    df = DataFile(f['locations'], f['filename'], f['checksums'], f['size'])
+                    self.get_q.put(df)
             current_uri = webdata.get('next', None)
         session.close()
 
@@ -190,9 +189,32 @@ class Downloads:
                 manifest_f.write('{}  {}\n'.format(checksum, path))
 
 
-def download_file(file_data, session, output_path):
+class DataFile:
+    """Representation of a file to be downloaded.
+
+    `locations` is a list of URLs
+    `filename` is the name of the data file
+    `size` is the size of the file in bytes
+    `checksums` is a dictionary of hash algorithm/value pairs
+    `verified` is a Boolean value indicating a successful checksum verification
+    """
+
+    def __init__(self, locations, filename, checksums, size):
+        self.locations = locations
+        self.filename = filename
+        self.checksums = checksums
+        self.size = size
+        self.verified = False
+
+
+def download_file(data_file, session, output_path):
     """Download webdata file to disk."""
-    for location in file_data['locations']:
+    if check_exists(output_path, data_file.size, data_file.checksums):
+        # Don't download the file if it already exists.
+        LOGGER.info('{} exists with expected size/checksum'.format(data_file.filename))
+        data_file.verified = True
+        return data_file
+    for location in data_file.locations:
         response = session.get(location, stream=True)
         msg = '{}: {} {}'.format(location,
                                  response.status_code,
@@ -205,13 +227,22 @@ def download_file(file_data, session, output_path):
                 break
             # Successful download; don't try alternate locations.
             LOGGER.info(msg)
-            return None
+            return data_file
         else:
             LOGGER.error(msg)
     # We didn't download successfully; raise error.
-    msg = 'FAILED to download {} from {}'.format(file_data['filename'],
-                                                 file_data['locations'])
+    msg = 'FAILED to download {} from {}'.format(data_file.filename,
+                                                 data_file.locations)
     raise WASAPIDownloadError(msg)
+
+
+def check_exists(path, size, checksums):
+    """Check if file with matching size and checksum exists."""
+    if not os.path.isfile(path):
+        return False
+    if not os.path.getsize(path) == size:
+        return False
+    return verify_file(checksums, path)
 
 
 def write_file(response, output_path=''):
@@ -308,29 +339,23 @@ class Downloader(multiprocessing.Process):
 
         Gets a file's data off the queue, attempts to download the
         file, and puts the result onto another queue.
-
-        A get_q item looks like:
-         {'locations': ['http://...', 'http://...'],
-          'filename': 'blah.warc.gz',
-          'checksums': {'sha1': '33304d104f95d826da40079bad2400dc4d005403',
-                        'md5': '62f87a969af0dd857ecd6c3e7fde6aed'}}
         """
         while True:
             try:
-                file_data = self.get_q.get(block=False)
+                data_file = self.get_q.get(block=False)
             except Empty:
                 break
             result = 'failure'
-            output_path = os.path.join(self.destination, file_data['filename'])
+            output_path = os.path.join(self.destination, data_file.filename)
             try:
-                download_file(file_data, self.session, output_path)
+                data_file = download_file(data_file, self.session, output_path)
             except WASAPIDownloadError as err:
                 LOGGER.error(str(err))
             else:
                 # If we download the file without error, verify the checksum.
-                if verify_file(file_data['checksums'], output_path):
+                if data_file.verified or verify_file(data_file.checksums, output_path):
                     result = 'success'
-            self.result_q.put((result, file_data['filename']))
+            self.result_q.put((result, data_file.filename))
             self.get_q.task_done()
 
 

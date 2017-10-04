@@ -5,6 +5,7 @@
 *.egg-info
 *.log
 *.warc.gz
+manifest-*.txt
 
 .cache/
 .eggs/
