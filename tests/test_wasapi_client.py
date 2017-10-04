@@ -150,9 +150,8 @@ class Test_Downloads:
         # There could be a better way to handle this...
         while j_queue.qsize():
             q_item = j_queue.get()
+            assert isinstance(q_item, wc.DataFile)
             j_queue.task_done()
-        for field in ['locations', 'filename', 'checksums']:
-            assert field in q_item
 
     def test_populate_downloads_multi_page(self, mock_session):
         """Test the queue returned for multiple results pages."""
@@ -166,9 +165,8 @@ class Test_Downloads:
         # Drain the JoinableQueue to avoid BrokenPipeError.
         while j_queue.qsize():
             q_item = j_queue.get()
+            assert isinstance(q_item, wc.DataFile)
             j_queue.task_done()
-        for field in ('locations', 'filename', 'checksums'):
-            assert field in q_item
 
     def test_populate_downloads_no_get_q(self, mock_session):
         """Test download=False prevents get_q attribute existing."""
@@ -305,70 +303,65 @@ class Test_convert_bytes:
 
 
 class Test_download_file:
-    FILE_DATA = {
-        'locations': ['http://loc1/blah.warc.gz',
-                      'http://loc2/blah.warc.gz'],
-        'filename': 'blah.warc.gz',
-        'size': 123456,
-        'checksums': {'sha1': '33304d104f95d826da40079bad2400dc4d005403',
-                      'md5': '62f87a969af0dd857ecd6c3e7fde6aed'}
-    }
+    locations = ['http://loc1/blah.warc.gz', 'http://loc2/blah.warc.gz']
+    filename = 'blah.warc.gz'
+    checksums = {'sha1': '33304d104f95d826da40079bad2400dc4d005403',
+                 'md5': '62f87a969af0dd857ecd6c3e7fde6aed'}
+    size = 12345678
+    data_file = wc.DataFile(locations, filename, checksums, size)
 
     def test_download_file_200(self):
         session = requests.Session()
         mock_200 = MockResponse200('')
-        loc = self.FILE_DATA['locations'][0]
-        filename = self.FILE_DATA['filename']
 
         with patch.object(session, 'get', return_value=mock_200) as mock_get, \
                 patch('wasapi_client.write_file') as mock_write_file:
-            wc.download_file(self.FILE_DATA, session, filename)
+            file_data = wc.download_file(self.data_file, session, self.filename)
 
         # Check we only tried downloading files until successful download.
-        mock_get.assert_called_once_with(loc, stream=True)
-        mock_write_file.assert_called_once_with(mock_200, filename)
+        mock_get.assert_called_once_with(self.locations[0], stream=True)
+        mock_write_file.assert_called_once_with(mock_200, self.filename)
+        assert not file_data.verified
 
     def test_download_file_not_200(self):
         session = requests.Session()
         mock_403 = MockResponse403()
-        locations = self.FILE_DATA['locations']
-        filename = self.FILE_DATA['filename']
 
         with patch.object(session, 'get', return_value=mock_403) as mock_get, \
                 pytest.raises(wc.WASAPIDownloadError) as err:
-            wc.download_file(self.FILE_DATA, session, filename)
+            wc.download_file(self.data_file, session, self.filename)
 
-        for item in (str(locations), filename):
+        for item in (str(self.locations), self.filename):
             assert item in str(err)
         # Check all locations were tried.
-        calls = [call(locations[0], stream=True),
-                 call(locations[1], stream=True)]
+        calls = [call(self.locations[0], stream=True),
+                 call(self.locations[1], stream=True)]
         mock_get.assert_has_calls(calls)
 
     def test_download_file_OSError(self):
         session = requests.Session()
         mock_200 = MockResponse200('')
-        locations = self.FILE_DATA['locations']
-        filename = self.FILE_DATA['filename']
 
         with patch.object(session, 'get', return_value=mock_200) as mock_get, \
                 patch('wasapi_client.write_file') as mock_write_file:
             mock_write_file.side_effect = OSError
             with pytest.raises(wc.WASAPIDownloadError) as err:
-                wc.download_file(self.FILE_DATA, session, filename)
+                wc.download_file(self.data_file, session, self.filename)
 
-        for item in (str(locations), filename):
+        for item in (str(self.locations), self.filename):
             assert item in str(err)
         # Check we only tried downloading files until successful download.
-        mock_get.assert_called_once_with(locations[0], stream=True)
-        mock_write_file.assert_called_once_with(mock_200, filename)
+        mock_get.assert_called_once_with(self.locations[0], stream=True)
+        mock_write_file.assert_called_once_with(mock_200, self.filename)
 
     def test_download_check_exists_true(self):
         """Test a file already existing on the filesystem is not downloaded."""
         with patch('wasapi_client.check_exists', return_value=True), \
                 patch('requests.Session', autospec=True) as mock_session:
-            filename = self.FILE_DATA['filename']
-            wc.download_file(self.FILE_DATA, mock_session, filename)
+            file_data = wc.download_file(self.data_file, mock_session, self.filename)
+        # Check `verified` has been set True on the FileData instance.
+        assert file_data.verified
+        # Check that no get request was made.
         assert not mock_session.get.called
 
 
@@ -500,26 +493,24 @@ class Test_generate_report:
                           'Failed downloads: 2\n')
 
 
-@patch('wasapi_client.download_file')
 class TestDownloader:
-    FILE_DATA = {
-        'locations': ['http://loc1/blah.warc.gz',
-                      'http://loc2/blah.warc.gz'],
-        'filename': 'blah.warc.gz',
-        'size': 123456,
-        'checksums': {'sha1': '33304d104f95d826da40079bad2400dc4d005403',
-                      'md5': '62f87a969af0dd857ecd6c3e7fde6aed'}
-    }
+    locations = ['http://loc1/blah.warc.gz', 'http://loc2/blah.warc.gz']
+    filename = 'blah.warc.gz'
+    checksums = {'sha1': '33304d104f95d826da40079bad2400dc4d005403',
+                 'md5': '62f87a969af0dd857ecd6c3e7fde6aed'}
+    size = 12345678
+    data_file = wc.DataFile(locations, filename, checksums, size)
 
-    def test_run(self, mock_download):
+    def test_run(self):
         """Test downloader when downloads are successful."""
         # Create a queue holding two sets of file data.
         get_q = multiprocessing.JoinableQueue()
         for _ in (1, 2):
-            get_q.put(self.FILE_DATA)
+            get_q.put(self.data_file)
         result_q = multiprocessing.Queue()
         log_q = multiprocessing.Queue()
-        with patch('wasapi_client.verify_file', return_value=True):
+        with patch('wasapi_client.verify_file', return_value=True) as mock_verify, \
+                patch('wasapi_client.download_file', return_value=self.data_file):
             p = wc.Downloader(get_q, result_q, log_q)
             p.start()
             p.run()
@@ -528,15 +519,17 @@ class TestDownloader:
         assert result_q.qsize() == 2
         assert log_q.qsize() == 0
         for _ in (1, 2):
-            assert result_q.get() == ('success', self.FILE_DATA['filename'])
+            assert result_q.get() == ('success', self.filename)
+        assert mock_verify.called
 
+    @patch('wasapi_client.download_file')
     def test_run_WASAPIDownloadError(self, mock_download):
         """Test downloader when downloads fail."""
         mock_download.side_effect = wc.WASAPIDownloadError()
         # Create a queue holding two sets of file data.
         get_q = multiprocessing.JoinableQueue()
         for _ in (1, 2):
-            get_q.put(self.FILE_DATA)
+            get_q.put(self.data_file)
         result_q = multiprocessing.Queue()
         log_q = multiprocessing.Queue()
         p = wc.Downloader(get_q, result_q, log_q)
@@ -547,7 +540,30 @@ class TestDownloader:
         assert result_q.qsize() == 2
         assert log_q.qsize() == 2
         for _ in (1, 2):
-            assert result_q.get() == ('failure', self.FILE_DATA['filename'])
+            assert result_q.get() == ('failure', self.filename)
+
+    def test_run_file_already_verified(self):
+        """Test downloader when file was verified by `download_file`."""
+        return_data_file = wc.DataFile(self.locations, self.filename, self.checksums, self.size)
+        return_data_file.verified = True
+        # Create a queue holding two sets of file data.
+        get_q = multiprocessing.JoinableQueue()
+        for _ in (1, 2):
+            get_q.put(self.data_file)
+        result_q = multiprocessing.Queue()
+        log_q = multiprocessing.Queue()
+        with patch('wasapi_client.verify_file', return_value=True) as mock_verify, \
+                patch('wasapi_client.download_file', return_value=return_data_file):
+            p = wc.Downloader(get_q, result_q, log_q)
+            p.start()
+            p.run()
+        # If the join doesn't block, the queue is fully processed.
+        get_q.join()
+        assert result_q.qsize() == 2
+        assert log_q.qsize() == 0
+        for _ in (1, 2):
+            assert result_q.get() == ('success', self.filename)
+        assert not mock_verify.called
 
 
 class Test_parse_args:
