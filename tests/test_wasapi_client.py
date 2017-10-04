@@ -454,26 +454,31 @@ class Test_calculate_sum:
 
 class Test_convert_queue:
     def test_convert_queue(self):
-        q = multiprocessing.Manager().Queue()
+        m = multiprocessing.Manager()
+        q = m.Queue()
         q.put(('success', 'name1'))
         q.put(('failure', 'name2'))
         dict_from_q = wc.convert_queue(q)
         assert dict_from_q['success'] == ['name1']
         assert dict_from_q['failure'] == ['name2']
+        m.shutdown()
 
 
 class Test_generate_report:
     def test_generate_report_all_success(self):
-        q = multiprocessing.Manager().Queue()
+        m = multiprocessing.Manager()
+        q = m.Queue()
         q.put(('success', 'name1'))
         q.put(('success', 'name2'))
         report = wc.generate_report(q)
         assert report == ('Total downloads attempted: 2\n'
                           'Successful downloads: 2\n'
                           'Failed downloads: 0\n')
+        m.shutdown()
 
     def test_generate_report_one_failure(self):
-        q = multiprocessing.Manager().Queue()
+        m = multiprocessing.Manager()
+        q = m.Queue()
         q.put(('success', 'name1'))
         q.put(('failure', 'name2'))
         report = wc.generate_report(q)
@@ -482,15 +487,18 @@ class Test_generate_report:
                           'Failed downloads: 1\n'
                           'Failed files (see log for details):\n'
                           '    name2\n')
+        m.shutdown()
 
     def test_generate_report_all_failure(self):
-        q = multiprocessing.Manager().Queue()
+        m = multiprocessing.Manager()
+        q = m.Queue()
         q.put(('failure', 'name1'))
         q.put(('failure', 'name2'))
         report = wc.generate_report(q)
         assert report == ('Total downloads attempted: 2\n'
                           'Successful downloads: 0\n'
                           'Failed downloads: 2\n')
+        m.shutdown()
 
 
 class TestDownloader:
@@ -509,7 +517,7 @@ class TestDownloader:
             get_q.put(self.data_file)
         result_q = multiprocessing.Queue()
         log_q = multiprocessing.Queue()
-        with patch('wasapi_client.verify_file', return_value=True) as mock_verify, \
+        with patch('wasapi_client.verify_file', return_value=True), \
                 patch('wasapi_client.download_file', return_value=self.data_file):
             p = wc.Downloader(get_q, result_q, log_q)
             p.start()
@@ -520,7 +528,6 @@ class TestDownloader:
         assert log_q.qsize() == 0
         for _ in (1, 2):
             assert result_q.get() == ('success', self.filename)
-        assert mock_verify.called
 
     @patch('wasapi_client.download_file')
     def test_run_WASAPIDownloadError(self, mock_download):
@@ -563,6 +570,7 @@ class TestDownloader:
         assert log_q.qsize() == 0
         for _ in (1, 2):
             assert result_q.get() == ('success', self.filename)
+        # Check verify_exists was not called, since it was called in `download_file`.
         assert not mock_verify.called
 
 
