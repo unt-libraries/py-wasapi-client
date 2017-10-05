@@ -1,6 +1,7 @@
 #!/usr/bin/env python
 
 import hashlib
+import io
 import json
 import multiprocessing
 import os
@@ -595,3 +596,72 @@ class Test_parse_args:
         args = wc._parse_args(['--collection', '12345', '98', '--crawl', '12'])
         assert len(args.query_params) == 2
         assert args.query_params['collection'] == ['12345', '98']
+
+
+class Test_get_credentials_env:
+    def test_get_credentials_env(self):
+        """Test auth credentials are set from environment variables."""
+        with patch.dict('os.environ', {'WASAPI_USER': 'me', 'WASAPI_PASS': 'p@ss123'}):
+            auth = wc.get_credentials_env()
+        assert auth == ('me', 'p@ss123')
+
+    def test_get_credentials_env_missing_one_env_var(self):
+        """Test a None value for username or password causes no auth."""
+        with patch('os.environ.get') as mock_get:
+            mock_get.side_effect = ['me', None]
+            auth = wc.get_credentials_env()
+        assert auth is None
+
+
+class Test_get_credentials_config:
+    def test_get_credentials_config(self):
+        """Test auth can be populated from a config file."""
+        stream = io.StringIO('[unt]\nusername = me\npassword = p@ss123')
+        with patch('builtins.open', return_value=stream):
+            auth = wc.get_credentials_config('unt')
+        assert auth == ('me', 'p@ss123')
+
+    def test_get_credentials_config_missing_profile(self):
+        """Test program exits if the profile supplied doesn't exist."""
+        stream = io.StringIO('[unt]\nusername = me\npassword = p@ss123')
+        with patch('builtins.open', return_value=stream), \
+                pytest.raises(SystemExit):
+            wc.get_credentials_config('home')
+
+    def test_get_credentials_config_missing_password(self):
+        """Test program exits if config does not supply an expected option."""
+        stream = io.StringIO('[unt]\nusername = me')
+        with patch('builtins.open', return_value=stream), \
+                pytest.raises(SystemExit):
+            wc.get_credentials_config('unt')
+
+
+class Test_get_credentials:
+    @patch('getpass.getpass', return_value='p@ss123')
+    def test_get_credentials_from_getpass(self, mock_getpass):
+        auth = wc.get_credentials(user='me')
+        assert auth == ('me', 'p@ss123')
+        mock_getpass.assert_called_once_with()
+
+    @patch('wasapi_client.get_credentials_env', return_value=('me', 'p@ss123'))
+    def test_get_credentials_from_env(self, mock_gce):
+        auth = wc.get_credentials()
+        assert auth == ('me', 'p@ss123')
+        mock_gce.assert_called_once_with()
+
+    @patch('wasapi_client.get_credentials_env', return_value=None)
+    @patch('wasapi_client.get_credentials_config', return_value=('me', 'p@ss123'))
+    def test_get_credentials_from_config(self, mock_gcc, mock_gce):
+        auth = wc.get_credentials(profile='unt')
+        assert auth == ('me', 'p@ss123')
+        mock_gcc.assert_called_once_with('unt')
+        mock_gce.assert_called_once_with()
+
+    @patch('wasapi_client.get_credentials_env', return_value=None)
+    @patch('wasapi_client.get_credentials_config')
+    def test_get_credentials_no_credentials_provided(self, mock_gcc, mock_gce):
+        """Test if no user/profile is provided and no valid config file exists."""
+        auth = wc.get_credentials()
+        assert auth is None
+        assert not mock_gcc.called
+        mock_gce.assert_called_once_with()

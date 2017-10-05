@@ -3,6 +3,7 @@
 import argparse
 import atexit
 import configparser
+import getpass
 import hashlib
 import logging
 import logging.handlers
@@ -409,9 +410,15 @@ def _parse_args(args=sys.argv[1:]):
                         action='count',
                         default=0,
                         help='log verbosely; -v is INFO, -vv is DEBUG')
-    parser.add_argument('--profile',
-                        dest='profile',
-                        help='profile to use for API authentication')
+
+    auth_group = parser.add_mutually_exclusive_group()
+    auth_group.add_argument('--profile',
+                            dest='profile',
+                            help='profile to use for API authentication')
+    auth_group.add_argument('-u',
+                            '--user',
+                            dest='user',
+                            help='username for API authentication')
 
     out_group = parser.add_mutually_exclusive_group()
     out_group.add_argument('-c',
@@ -467,6 +474,52 @@ def _parse_args(args=sys.argv[1:]):
     return parser.parse_args(args)
 
 
+def get_credentials_env():
+    """Get API credentials from environment variables."""
+    env = os.environ.get
+    auth = (env('WASAPI_USER'), env('WASAPI_PASS'))
+    if None in auth:
+        auth = None
+    else:
+        LOGGER.debug('Using API credentials from environment variables')
+    return auth
+
+
+def get_credentials_config(profile, path=PROFILE_PATH):
+    """Get API credentials from a config file."""
+    config = configparser.ConfigParser()
+    try:
+        config.read_file(open(path))
+        auth = (config.get(profile, 'username'),
+                config.get(profile, 'password'))
+    except (OSError,
+            configparser.NoSectionError,
+            configparser.NoOptionError) as err:
+        sys.exit('{}: please create config file to supply API credentials with format:\n\n'
+                 '[{}]\n'
+                 'username = someuser\n'
+                 'password = secretpasswd\n'.format(err, profile))
+    LOGGER.debug('Using API credentials from {}'.format(path))
+    return auth
+
+
+def get_credentials(user=None, profile=None):
+    """Determine a username/password combination if one is supplied.
+
+    Order of precedence is command line, environment, config file."""
+    auth = None
+    if user:
+        # If there is a username, prompt for a password.
+        auth = (user, getpass.getpass())
+    else:
+        # Check for credentials in environment variables.
+        auth = get_credentials_env()
+    if profile and auth is None:
+        # Check for credentials in a config file.
+        auth = get_credentials_config(profile)
+    return auth
+
+
 def main():
     args = _parse_args()
 
@@ -506,20 +559,8 @@ def main():
     webdata_uri = '{}{}'.format(args.base_uri, query)
 
     # Generate authentication tuple for the API calls.
-    auth = None
-    if args.profile:
-        config = configparser.ConfigParser()
-        try:
-            config.readfp(open(PROFILE_PATH))
-            auth = (config.get(args.profile, 'username'),
-                    config.get(args.profile, 'password'))
-        except (OSError,
-                configparser.NoSectionError,
-                configparser.NoOptionError) as err:
-            sys.exit('{}: please create config file to supply API credentials with format:\n\n'
-                     '[{}]\n'
-                     'username = someuser\n'
-                     'password = secretpasswd\n'.format(err, args.profile))
+    auth = get_credentials(args.user, args.profile)
+
     # If user wants the size, don't download files.
     if args.size:
         count, size = get_files_size(webdata_uri, auth)
