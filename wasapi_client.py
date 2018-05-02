@@ -309,10 +309,10 @@ def convert_queue(tuple_q):
 
 def generate_report(result_q):
     """Create a summary of success/failure downloads."""
-    total = result_q.qsize()
     results = convert_queue(result_q)
     success = len(results.get('success', []))
     failure = len(results.get('failure', []))
+    total = success + failure
     summary = ('Total downloads attempted: {}\n'
                'Successful downloads: {}\n'
                'Failed downloads: {}\n').format(total, success, failure)
@@ -601,7 +601,10 @@ def main():
     result_q = manager.Queue()
 
     download_processes = []
-    num_processes = min(args.processes, get_q.qsize())
+    try:
+        num_processes = min(args.processes, get_q.qsize())
+    except NotImplementedError:
+        num_processes = args.processes
     for _ in range(num_processes):
         dp = Downloader(get_q, result_q, log_q, log_level, auth, args.destination)
         dp.start()
