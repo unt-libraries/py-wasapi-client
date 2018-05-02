@@ -15,7 +15,7 @@ import sys
 from collections import defaultdict
 try:
     from json.decoder import JSONDecodeError
-except:
+except ImportError:
     class JSONDecodeError(ValueError):
         pass
 from queue import Empty
