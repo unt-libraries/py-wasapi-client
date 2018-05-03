@@ -309,10 +309,10 @@ def convert_queue(tuple_q):
 
 def generate_report(result_q):
     """Create a summary of success/failure downloads."""
-    total = result_q.qsize()
     results = convert_queue(result_q)
     success = len(results.get('success', []))
     failure = len(results.get('failure', []))
+    total = success + failure
     summary = ('Total downloads attempted: {}\n'
                'Successful downloads: {}\n'
                'Failed downloads: {}\n').format(total, success, failure)
@@ -383,6 +383,11 @@ def _parse_args(args=sys.argv[1:]):
          2017-01-01 12:34:56-0700
          2017
          2017-01"""
+    try:
+        # According to multiprocessing docs, this could fail on some platforms.
+        default_processes = multiprocessing.cpu_count()
+    except NotImplementedError:
+        default_processes = 1
     parser = argparse.ArgumentParser(description=description,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
 
@@ -432,7 +437,7 @@ def _parse_args(args=sys.argv[1:]):
     out_group.add_argument('-p',
                            '--processes',
                            type=int,
-                           default=multiprocessing.cpu_count(),
+                           default=default_processes,
                            help='number of WARC downloading processes')
     out_group.add_argument('-s',
                            '--size',
@@ -601,7 +606,10 @@ def main():
     result_q = manager.Queue()
 
     download_processes = []
-    num_processes = min(args.processes, get_q.qsize())
+    try:
+        num_processes = min(args.processes, get_q.qsize())
+    except NotImplementedError:
+        num_processes = args.processes
     for _ in range(num_processes):
         dp = Downloader(get_q, result_q, log_q, log_level, auth, args.destination)
         dp.start()
