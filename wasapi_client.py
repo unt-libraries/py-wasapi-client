@@ -383,6 +383,11 @@ def _parse_args(args=sys.argv[1:]):
          2017-01-01 12:34:56-0700
          2017
          2017-01"""
+    try:
+        # According to multiprocessing docs, this could fail on some platforms.
+        default_processes = multiprocessing.cpu_count()
+    except NotImplementedError:
+        default_processes = 1
     parser = argparse.ArgumentParser(description=description,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
 
@@ -432,7 +437,7 @@ def _parse_args(args=sys.argv[1:]):
     out_group.add_argument('-p',
                            '--processes',
                            type=int,
-                           default=multiprocessing.cpu_count(),
+                           default=default_processes,
                            help='number of WARC downloading processes')
     out_group.add_argument('-s',
                            '--size',

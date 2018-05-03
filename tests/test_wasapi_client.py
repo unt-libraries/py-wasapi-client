@@ -576,6 +576,17 @@ class TestDownloader:
 
 
 class Test_parse_args:
+    @patch('wasapi_client.multiprocessing.cpu_count')
+    def test_default_processes(self, mock_cpu_count):
+        """Test handling of cpu_count() erroring.
+
+        Could happen when cpu_count isn't implemented on a platform
+        and --processes isn't specified by the user.
+        """
+        mock_cpu_count.side_effect = NotImplementedError
+        args = wc._parse_args(['--crawl', '12'])
+        assert args.processes == 1
+
     def test_SetQueryParametersAction(self):
         """Test that arguments passed with this action are in query_params."""
         args = wc._parse_args(['--crawl-start-after',
