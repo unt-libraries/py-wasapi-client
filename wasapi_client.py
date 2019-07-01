@@ -97,7 +97,7 @@ def get_webdata(webdata_uri, session):
     try:
         return response.json()
     except (JSONDecodeError, ValueError) as err:
-        sys.exit('Non-JSON response from {}'.format(webdata_uri))
+        sys.exit('Non-JSON response from {}:\n{}'.format(webdata_uri, err))
 
 
 def get_files_count(webdata_uri, auth=None):
@@ -216,7 +216,13 @@ def download_file(data_file, session, output_path):
         data_file.verified = True
         return data_file
     for location in data_file.locations:
-        response = session.get(location, stream=True)
+        try:
+            response = session.get(location, stream=True)
+        except requests.exceptions.RequestException as err:
+            # This could be a remote disconnect, read timeout, connection timeout,
+            # temporary name resolution issue...
+            LOGGER.error('Error downloading {}:\n{}'.format(location, err))
+            continue
         msg = '{}: {} {}'.format(location,
                                  response.status_code,
                                  response.reason)
