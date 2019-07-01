@@ -218,7 +218,7 @@ def download_file(data_file, session, output_path):
     for location in data_file.locations:
         try:
             response = session.get(location, stream=True)
-        except (requests.exceptions.ConnectionError, requests.exceptions.Timeout) as err:
+        except requests.exceptions.RequestException as err:
             # This could be a remote disconnect, read timeout, connection timeout,
             # temporary name resolution issue...
             LOGGER.error('Error downloading {}:\n{}'.format(location, err))

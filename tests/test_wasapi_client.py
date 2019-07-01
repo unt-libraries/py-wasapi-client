@@ -7,6 +7,7 @@ import multiprocessing
 import os
 import sys
 from collections import OrderedDict
+from logging import INFO
 from unittest.mock import call, mock_open, patch
 
 import pytest
@@ -331,13 +332,35 @@ class Test_download_file:
         with patch.object(session, 'get', return_value=mock_403) as mock_get, \
                 pytest.raises(wc.WASAPIDownloadError) as err:
             wc.download_file(self.data_file, session, self.filename)
-
         for item in (str(self.locations), self.filename):
-            assert item in str(err)
+            assert item in err.value.args[0]
         # Check all locations were tried.
         calls = [call(self.locations[0], stream=True),
                  call(self.locations[1], stream=True)]
         mock_get.assert_has_calls(calls)
+
+    def test_download_get_raises_some_RequestException(self, caplog):
+        caplog.set_level(INFO)
+        session = requests.Session()
+        mock_200 = MockResponse200('')
+
+        with patch.object(session, 'get') as mock_get, \
+                patch('wasapi_client.write_file') as mock_write_file:
+            # Raise a subclass of RequestException on first download attempt;
+            # mock a successful response on the second attempt
+            mock_get.side_effect = [requests.exceptions.ConnectionError(),
+                                    mock_200]
+            wc.download_file(self.data_file, session, self.filename)
+
+        # Check all locations were tried.
+        calls = [call(self.locations[0], stream=True),
+                 call(self.locations[1], stream=True)]
+        mock_get.assert_has_calls(calls)
+        mock_write_file.assert_called_once_with(mock_200, self.filename)
+        # Verify requests exception was caught and logged.
+        for msg in ('Error downloading http://loc1/blah.warc.gz:',
+                    'http://loc2/blah.warc.gz: 200 OK'):
+            assert msg in caplog.text
 
     def test_download_file_OSError(self):
         session = requests.Session()
@@ -350,7 +373,7 @@ class Test_download_file:
                 wc.download_file(self.data_file, session, self.filename)
 
         for item in (str(self.locations), self.filename):
-            assert item in str(err)
+            assert item in err.value.args[0]
         # Check we only tried downloading files until successful download.
         mock_get.assert_called_once_with(self.locations[0], stream=True)
         mock_write_file.assert_called_once_with(mock_200, self.filename)
