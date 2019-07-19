@@ -98,8 +98,10 @@ class MockResponse403:
 class Test_make_session:
     def test_make_session_auth(self):
         auth = ('user', 'pass')
-        session = wc.make_session(auth)
+        headers = {'Authorization': 'Token lalala'}
+        session = wc.make_session(auth, headers)
         assert session.auth == auth
+        assert 'Authorization' in session.headers
 
     def test_make_session_no_auth(self):
         session = wc.make_session(None)
