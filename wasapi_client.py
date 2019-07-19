@@ -101,17 +101,17 @@ def get_webdata(webdata_uri, session):
         sys.exit('Non-JSON response from {}:\n{}'.format(webdata_uri, err))
 
 
-def get_files_count(webdata_uri, auth=None):
+def get_files_count(webdata_uri, auth=None, headers={}):
     """Return total number of downloadable files."""
-    session = make_session(auth)
+    session = make_session(auth, headers)
     webdata = get_webdata(webdata_uri, session)
     session.close()
     return webdata.get('count', None)
 
 
-def get_files_size(page_uri, auth=None):
+def get_files_size(page_uri, auth=None, headers={}):
     """Return total size (bytes) of downloadable files."""
-    session = make_session(auth)
+    session = make_session(auth, headers)
     total = 0
     count = 0
     webdata = None
@@ -588,14 +588,14 @@ def main():
 
     # If user wants the size, don't download files.
     if args.size:
-        count, size = get_files_size(webdata_uri, auth)
+        count, size = get_files_size(webdata_uri, auth, headers)
         print('Number of Files: ', count)
         print('Size of Files: ', convert_bytes(size))
         sys.exit()
 
     # If user wants a count, don't download files.
     if args.count:
-        print('Number of Files: ', get_files_count(webdata_uri, auth))
+        print('Number of Files: ', get_files_count(webdata_uri, auth, headers))
         sys.exit()
 
     # Process webdata requests to generate checksum files.
