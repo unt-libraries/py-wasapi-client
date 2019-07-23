@@ -118,7 +118,7 @@ user `myusername`. Downloads are carried out by one process.
  $ wasapi-client -u myusername --crawl 256119 --log /tmp/out.log -p 1
 ```
 
-The follow command downloads similarly, but user credentials are
+The following command downloads similarly, but user credentials are
 supplied by a configuration file.
 
 ```
