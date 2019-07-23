@@ -73,13 +73,14 @@ class WASAPIManifestError(Exception):
     pass
 
 
-def make_session(auth=None):
+def make_session(auth=None, headers={}):
     """Make a session that will store our auth.
 
     `auth` is a tuple of the form (user, password)
     """
     session = requests.Session()
     session.auth = auth
+    session.headers.update(headers)
     return session
 
 
@@ -100,17 +101,17 @@ def get_webdata(webdata_uri, session):
         sys.exit('Non-JSON response from {}:\n{}'.format(webdata_uri, err))
 
 
-def get_files_count(webdata_uri, auth=None):
+def get_files_count(webdata_uri, auth=None, headers={}):
     """Return total number of downloadable files."""
-    session = make_session(auth)
+    session = make_session(auth, headers)
     webdata = get_webdata(webdata_uri, session)
     session.close()
     return webdata.get('count', None)
 
 
-def get_files_size(page_uri, auth=None):
+def get_files_size(page_uri, auth=None, headers={}):
     """Return total size (bytes) of downloadable files."""
-    session = make_session(auth)
+    session = make_session(auth, headers)
     total = 0
     count = 0
     webdata = None
@@ -145,7 +146,8 @@ class Downloads:
     each available hash algorithm.
     """
 
-    def __init__(self, page_uri, auth=None, download=True, destination=''):
+    def __init__(self, page_uri, auth=None, download=True, destination='',
+                 headers={}):
         self.page_uri = page_uri
         self.auth = auth
         self.download = download
@@ -154,11 +156,12 @@ class Downloads:
         self.checksums = defaultdict(list)
         self.urls = []
         self.destination = '' if destination == '.' else destination
+        self.headers = headers
         self.populate_downloads()
 
     def populate_downloads(self):
         """Repeat webdata requests to gather downloadable file info."""
-        session = make_session(self.auth)
+        session = make_session(self.auth, self.headers)
         current_uri = self.page_uri
         while current_uri:
             webdata = get_webdata(current_uri, session)
@@ -333,11 +336,11 @@ class Downloader(multiprocessing.Process):
     """Worker for downloading web files with a persistent session."""
 
     def __init__(self, get_q, result_q, log_q, log_level=logging.ERROR,
-                 auth=None, destination='.', *args, **kwargs):
+                 auth=None, destination='.', headers={}, *args, **kwargs):
         super(Downloader, self).__init__(*args, **kwargs)
         self.get_q = get_q
         self.result_q = result_q
-        self.session = make_session(auth)
+        self.session = make_session(auth, headers)
         self.destination = destination
         configure_worker_logging(log_q, log_level)
 
@@ -430,6 +433,10 @@ def _parse_args(args=sys.argv[1:]):
                             '--user',
                             dest='user',
                             help='username for API authentication')
+    auth_group.add_argument('-t',
+                            '--token',
+                            dest='token',
+                            help='token for API authentication')
 
     out_group = parser.add_mutually_exclusive_group()
     out_group.add_argument('-c',
@@ -569,39 +576,46 @@ def main():
         query = ''
     webdata_uri = '{}{}'.format(args.base_uri, query)
 
-    # Generate authentication tuple for the API calls.
-    auth = get_credentials(args.user, args.profile)
+    # Set up authentication.
+    auth = None
+    headers = {}
+    if args.token:
+        # Set the HTTP Authentication header.
+        headers['Authorization'] = 'Token {}'.format(args.token)
+    else:
+        # Generate authentication tuple for the API calls.
+        auth = get_credentials(args.user, args.profile)
 
     # If user wants the size, don't download files.
     if args.size:
-        count, size = get_files_size(webdata_uri, auth)
+        count, size = get_files_size(webdata_uri, auth, headers)
         print('Number of Files: ', count)
         print('Size of Files: ', convert_bytes(size))
         sys.exit()
 
     # If user wants a count, don't download files.
     if args.count:
-        print('Number of Files: ', get_files_count(webdata_uri, auth))
+        print('Number of Files: ', get_files_count(webdata_uri, auth, headers))
         sys.exit()
 
     # Process webdata requests to generate checksum files.
     if args.manifest:
         downloads = Downloads(webdata_uri, auth, download=False,
-                              destination=args.destination)
+                              destination=args.destination, headers=headers)
         downloads.generate_manifests()
         sys.exit()
 
     # Print the URLs for files that can be downloaded; don't download them.
     if args.urls:
         downloads = Downloads(webdata_uri, auth, download=False,
-                              destination=args.destination)
+                              destination=args.destination, headers=headers)
         for url in downloads.urls:
             print(url)
         sys.exit()
 
     # Process webdata requests to fill webdata file queue.
     downloads = Downloads(webdata_uri, auth, download=True,
-                          destination=args.destination)
+                          destination=args.destination, headers=headers)
 
     # Write manifest file(s).
     if not args.skip_manifest:
@@ -617,7 +631,8 @@ def main():
     except NotImplementedError:
         num_processes = args.processes
     for _ in range(num_processes):
-        dp = Downloader(get_q, result_q, log_q, log_level, auth, args.destination)
+        dp = Downloader(get_q, result_q, log_q, log_level, auth,
+                        args.destination, headers=headers)
         dp.start()
         download_processes.append(dp)
     for dp in download_processes:

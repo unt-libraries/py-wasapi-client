@@ -24,7 +24,7 @@ That gives you usage instructions:
 
 ```
 usage: wasapi-client [-h] [-b BASE_URI] [-d DESTINATION] [-l LOG] [-n] [-v]
-                     [--profile PROFILE | -u USER]
+                     [--profile PROFILE | -u USER | -t TOKEN]
                      [-c | -m | -p PROCESSES | -s | -r]
                      [--collection COLLECTION [COLLECTION ...]]
                      [--filename FILENAME] [--crawl CRAWL]
@@ -57,6 +57,8 @@ optional arguments:
   -v, --verbose         log verbosely; -v is INFO, -vv is DEBUG
   --profile PROFILE     profile to use for API authentication
   -u USER, --user USER  username for API authentication
+  -t TOKEN, --token TOKEN
+                        token for API authentication
   -c, --count           print number of files for download and exit
   -m, --manifest        generate checksum files only and exit
   -p PROCESSES, --processes PROCESSES
@@ -109,10 +111,24 @@ Order of precedence is command line, environment, config file.
 
 The following command downloads the WARC files available from a crawl
 with `crawl id` 256119 and logs program output to a file named
-`out.log`. Downloads are carried out by one process.
+`out.log`. The program will prompt the user to enter the password for
+user `myusername`. Downloads are carried out by one process.
+
+```
+ $ wasapi-client -u myusername --crawl 256119 --log /tmp/out.log -p 1
+```
+
+The following command downloads similarly, but user credentials are
+supplied by a configuration file.
 
 ```
  $ wasapi-client --profile unt --crawl 256119 --log out.log -p 1
+```
+
+You may supply an API token instead of user credentials.
+
+```
+ $ wasapi-client --token thisistheAPItokenIwasgiven --crawl 256119 --log out.log -p 1
 ```
 
 The following command downloads the WARC files available from crawls
