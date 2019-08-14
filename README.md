@@ -4,14 +4,23 @@ is being developed according to the [ait-specification](https://github.com/WASAP
 
 ## Requirements
 
-* Python 3.4, 3.5, or 3.6
+* Python 3.4-3.7
 
 ## Installation
 
-The WASAPI client may be installed with:
+To run the latest code, the WASAPI client may be downloaded or cloned
+from [GitHub](https://github.com/unt-libraries/py-wasapi-client). From inside the top-level of the py-wasapi-client directory,
+install with:
 
 ```
  $ python setup.py install
+```
+
+Alternatively, the most recent release (not guaranteed to be the latest
+code) may be installed from [PyPi](https://pypi.org/project/py-wasapi-client/):
+
+```
+ $ pip install py-wasapi-client
 ```
 
 Once installed, run the client at the command line with:
@@ -196,5 +205,6 @@ $ python setup.py test
 or
 
 ```
+$ pip install tox
 $ tox
 ```
