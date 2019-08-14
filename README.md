@@ -8,7 +8,9 @@ is being developed according to the [ait-specification](https://github.com/WASAP
 
 ## Installation
 
-To run the latest code, the WASAPI client may be installed with:
+To run the latest code, the WASAPI client may be downloaded or cloned
+from [GitHub](https://github.com/unt-libraries/py-wasapi-client). From inside the top-level of the py-wasapi-client directory,
+install with:
 
 ```
  $ python setup.py install
