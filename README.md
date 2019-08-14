@@ -15,7 +15,7 @@ To run the latest code, the WASAPI client may be installed with:
 ```
 
 Alternatively, the most recent release (not guaranteed to be the latest
-code) may be installed from [PyPi](https://pypi.org/):
+code) may be installed from [PyPi](https://pypi.org/project/py-wasapi-client/):
 
 ```
  $ pip install py-wasapi-client
