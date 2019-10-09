@@ -32,6 +32,7 @@ PROFILE_PATH = os.path.join(os.path.expanduser('~'), '.wasapi-client')
 
 PRE_SIGNED_REGEX = [re.compile(r'https://.*\.s3.amazonaws\.com/.*[?].*Signature=.+')]
 
+
 def start_listener_logging(log_q, path=''):
     formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s')
     if path:
@@ -313,9 +314,12 @@ def verify_file(checksums, file_path):
     return False
 
 
-# implements double-md5 computation as suggested in
-# https://zihao.me/post/calculating-etag-for-aws-s3-objects/
 class S3DoubleMD5:
+    """Implements double-md5 computation as suggested by:
+
+    https://zihao.me/post/calculating-etag-for-aws-s3-objects/
+    """
+
     def __init__(self):
         self.md5s = []
 
@@ -329,7 +333,6 @@ class S3DoubleMD5:
         digests = b''.join(m.digest() for m in self.md5s)
         digests_md5 = hashlib.md5(digests)
         return '{}-{}'.format(digests_md5.hexdigest(), len(self.md5s))
-
 
 
 def calculate_sum(hash_function, file_path, read_limit=READ_LIMIT):
