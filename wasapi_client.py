@@ -11,6 +11,7 @@ import math
 import multiprocessing
 import os
 import requests
+import re
 import sys
 from collections import defaultdict
 try:
@@ -29,6 +30,7 @@ READ_LIMIT = 1024 * 512
 
 PROFILE_PATH = os.path.join(os.path.expanduser('~'), '.wasapi-client')
 
+PRE_SIGNED_REGEX = [re.compile(r'https://.*\.s3.amazonaws\.com/.*[?].*Signature=.+')]
 
 def start_listener_logging(log_q, path=''):
     formatter = logging.Formatter('%(asctime)s %(levelname)s %(name)s %(message)s')
@@ -219,8 +221,17 @@ def download_file(data_file, session, output_path):
         data_file.verified = True
         return data_file
     for location in data_file.locations:
+
+        # if location matches a 'pre-signed' url regex pattern,
+        # skip auth for this location
+        for rx in PRE_SIGNED_REGEX:
+            if rx.match(location):
+                sesh = requests
+            else:
+                sesh = session
+
         try:
-            response = session.get(location, stream=True)
+            response = sesh.get(location, stream=True)
         except requests.exceptions.RequestException as err:
             # This could be a remote disconnect, read timeout, connection timeout,
             # temporary name resolution issue...
@@ -270,12 +281,25 @@ def verify_file(checksums, file_path):
     or failure determines if the file is valid.
     """
     for algorithm, value in checksums.items():
+        read_limit = READ_LIMIT
         hash_function = getattr(hashlib, algorithm, None)
+        if not hash_function and algorithm == 'etag':
+            # if etag does not contain a '-', then its just a regular md5
+            if '-' not in value:
+                hash_function = hashlib.md5
+
+            # otherwise, its likely 'double-md5'
+            # see: https://zihao.me/post/calculating-etag-for-aws-s3-objects/
+            else:
+                hash_function = S3DoubleMD5
+                # expected chunk size for S3 md5 computation
+                read_limit = 1024 * 1024 * 8
+
         if not hash_function:
             # The hash algorithm provided is not supported by hashlib.
             LOGGER.debug('{} is unsupported'.format(algorithm))
             continue
-        digest = calculate_sum(hash_function, file_path)
+        digest = calculate_sum(hash_function, file_path, read_limit)
         if digest == value:
             LOGGER.info('Checksum success at: {}'.format(file_path))
             return True
@@ -289,14 +313,33 @@ def verify_file(checksums, file_path):
     return False
 
 
-def calculate_sum(hash_function, file_path):
+# implements double-md5 computation as suggested in
+# https://zihao.me/post/calculating-etag-for-aws-s3-objects/
+class S3DoubleMD5:
+    def __init__(self):
+        self.md5s = []
+
+    def update(self, buff):
+        self.md5s.append(hashlib.md5(buff))
+
+    def hexdigest(self):
+        if len(self.md5s) == 1:
+            return self.md5s[0].hexdigest()
+
+        digests = b''.join(m.digest() for m in self.md5s)
+        digests_md5 = hashlib.md5(digests)
+        return '{}-{}'.format(digests_md5.hexdigest(), len(self.md5s))
+
+
+
+def calculate_sum(hash_function, file_path, read_limit=READ_LIMIT):
     """Return the checksum of the given file."""
     hasher = hash_function()
     with open(file_path, 'rb') as rff:
-        r = rff.read(READ_LIMIT)
+        r = rff.read(read_limit)
         while r:
             hasher.update(r)
-            r = rff.read(READ_LIMIT)
+            r = rff.read(read_limit)
     return hasher.hexdigest()
 
 
