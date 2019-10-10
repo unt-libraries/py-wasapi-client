@@ -284,12 +284,12 @@ def verify_file(checksums, file_path):
     for algorithm, value in checksums.items():
         read_limit = READ_LIMIT
         hash_function = getattr(hashlib, algorithm, None)
-        if not hash_function and algorithm == 'etag':
+        if not hash_function and algorithm == 's3etag':
             # if etag does not contain a '-', then its just a regular md5
             if '-' not in value:
                 hash_function = hashlib.md5
 
-            # otherwise, its likely 'double-md5'
+            # otherwise, its likely a 'double-md5'
             # see: https://zihao.me/post/calculating-etag-for-aws-s3-objects/
             else:
                 hash_function = S3DoubleMD5
