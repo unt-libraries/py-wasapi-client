@@ -1,6 +1,6 @@
 # py-wasapi-client [![Build Status](https://travis-ci.org/unt-libraries/py-wasapi-client.svg)](https://travis-ci.org/unt-libraries/py-wasapi-client)
-A client for the [Archive-It] WASAPI Data Transfer API. This client
-is being developed according to the [ait-specification](https://github.com/WASAPI-Community/data-transfer-apis/tree/master/ait-specification).
+A client for the WASAPI Data Transfer API. Initially developed according to the
+[Archive-It specification](https://github.com/WASAPI-Community/data-transfer-apis/tree/master/ait-specification), the client now additionally supports [Webrecorder.io](https://webrecorder.io/).
 
 ## Requirements
 
@@ -96,8 +96,8 @@ query parameters:
 
 ## Configuration
 
-When you are using the tool to query an Archive-It WASAPI endpoint,
-you will need to supply a username and password for the API. You have
+When you are using the tool to query an Archive-It or Webrecorder WASAPI
+endpoint, you will need to supply a username and password for the API. You have
 three options to provide these credentials.
 
 1. Supply a username with `-u`, and you will be prompted for a password.
@@ -194,6 +194,13 @@ wasapi-client do the downloading, use the --urls flag.
 
 ```
 $ wasapi-client --profile unt --crawl 256119 --urls
+```
+
+To use the client with Webrecorder (not all query parameters may be supported),
+supply the base URL with -b.
+
+```
+$ wasapi-client -b https://webrecorder.io/api/v1/download/webdata --profile webrecorder --collection my_collection -d warcs
 ```
 
 ## Run the Tests

@@ -390,6 +390,23 @@ class Test_download_file:
         # Check that no get request was made.
         assert not mock_session.get.called
 
+    def test_download_uses_pre_signed_url(self):
+        """Test that an s3 URL uses requests.get, not a session."""
+        locations = ['https://data.s3.amazonaws.com/warcs/blah.warc.gz?Signature=xyz',
+                     'http://loc2/blah.warc.gz']
+        filename = 'blah.warc.gz'
+        checksums = {'md5': '72b484a2610cb54ec22e48c8104ba3bd'}
+        data_file = wc.DataFile(locations, filename, checksums, 123456)
+        mock_200 = MockResponse200('')
+
+        with patch('requests.get', return_value=mock_200) as mock_get, \
+                patch('wasapi_client.write_file') as mock_write_file:
+            wc.download_file(data_file, requests.Session(), filename)
+
+        # Check we attempted one download via requests.get and wrote the file.
+        mock_get.assert_called_once_with(locations[0], stream=True)
+        mock_write_file.assert_called_once_with(mock_200, filename)
+
 
 class Test_check_exists:
     def test_check_exists_return_true(self):
@@ -466,6 +483,47 @@ class Test_verify_file:
         # Check that unsupported algorithm was tried.
         mock_logger.debug.assert_called_once_with('abc is unsupported')
         mock_logger.info.assert_called_once_with('Checksum success at: dummy/path')
+
+    @patch('wasapi_client.calculate_sum')
+    def test_verify_file_s3etag_algorithm_regular_md5(self, mock_calc_sum):
+        checksum = '72b484a2610cb54ec22e48c8104ba3bd'
+        checksums = {'s3etag': checksum}
+        mock_calc_sum.return_value = checksum
+        assert wc.verify_file(checksums, 'dummy/path')
+        # Verify the hash_function used was md5.
+        mock_calc_sum.assert_called_once_with(hashlib.md5, 'dummy/path', wc.READ_LIMIT)
+
+    @patch('wasapi_client.calculate_sum')
+    def test_verify_file_s3etag_algorithm_double_md5(self, mock_calc_sum):
+        checksum = 'ceb8853ddc5086cc4ab9e149f8f09c88-2'
+        checksums = {'s3etag': checksum}
+        mock_calc_sum.return_value = checksum
+        assert wc.verify_file(checksums, 'dummy/path')
+        # Verify s3etag value containing a '-' uses S3DoubleMD5 and custom read_limit.
+        mock_calc_sum.assert_called_once_with(wc.S3DoubleMD5, 'dummy/path', 1024*1024*8)
+
+
+class Test_S3DoubleMD5:
+    def test_S3DoubleMD5_single_md5(self):
+        content = b'We are updating this once.'
+        s3md5 = wc.S3DoubleMD5()
+        s3md5.update(content)
+        # Calling update once means length of s3md5.md5s is 1, and
+        # hexdigest is same as for regular md5.
+        assert len(s3md5.md5s) == 1
+        assert s3md5.hexdigest() == hashlib.md5(content).hexdigest()
+
+    def test_S3DoubleMD5_double_md5(self):
+        content = b'We are updating this once.\nTwice.\nAnd three times.'
+        s3md5 = wc.S3DoubleMD5()
+        # Cause update to be called three times.
+        for line in content.split(b'\n'):
+            s3md5.update(line)
+        # S3DoubleMD5 hexdigest should be the hexdigest of the concatenation
+        # of the digests of the 3 items in s3md5.md5s and a '-3'
+        # for the number of digests that were concatenated.
+        assert len(s3md5.md5s) == 3
+        assert s3md5.hexdigest() == '8e73850eb35bebe8ebd2896dd9032e48-3'
 
 
 class Test_calculate_sum:
