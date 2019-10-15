@@ -150,8 +150,6 @@ class Test_Downloads:
         mock_session.return_value.get.return_value = MockResponse200()
         downloads = wc.Downloads(WASAPI_URL, download=True)
         j_queue = downloads.get_q
-        # queue needs a moment before consumption.
-        time.sleep(.15)
 
         # Drain the JoinableQueue to avoid BrokenPipeError.
         # There could be a better way to handle this...
@@ -170,8 +168,6 @@ class Test_Downloads:
         mock_session.return_value.get.side_effect = responses
         downloads = wc.Downloads(WASAPI_URL, download=True)
         j_queue = downloads.get_q
-        # queue needs a moment before consumption.
-        time.sleep(.25)
 
         # Drain the JoinableQueue to avoid BrokenPipeError.
         for _ in range(4):
@@ -644,6 +640,7 @@ class TestDownloader:
             assert log_q.get().msg == expected_error
             assert result_q.get() == ('failure', self.filename)
         # Verify those were the only two results on the result_q.
+        # Sometimes `empty` needs a moment to register.
         time.sleep(.25)
         assert result_q.empty()
 
