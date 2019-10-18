@@ -13,13 +13,14 @@ jobs:
       dist: xenial
       python: 3.7
     - os: osx
-      python: 3.6
+      osx_image: xcode11
+      language: shell
 language: python
 sudo: false
 install:
-  - pip install -r requirements-test.txt
-  - pip install flake8
-  - python setup.py install
+  - pip3 install -r requirements-test.txt
+  - pip3 install flake8
+  - python3 setup.py install
 script:
     - pytest
     - flake8
