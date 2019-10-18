@@ -1,4 +1,8 @@
-dist: xenial
+jobs:
+  include:
+    - os: linux
+      dist: xenial
+    - os: osx
 language: python
 sudo: false
 python:
