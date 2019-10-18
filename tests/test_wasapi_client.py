@@ -641,7 +641,7 @@ class TestDownloader:
             assert result_q.get() == ('failure', self.filename)
         # Verify those were the only two results on the result_q.
         # Sometimes `empty` needs a moment to register.
-        time.sleep(.25)
+        time.sleep(.5)
         assert result_q.empty()
 
     def test_run_file_already_verified(self):
