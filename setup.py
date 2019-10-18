@@ -16,7 +16,7 @@ setup(
     license='BSD',
     py_modules=['wasapi_client'],
     scripts=['wasapi_client.py'],
-    description='A client for the [Archive-It] WASAPI Data Transer API',
+    description='A client for the Archive-It and Webrecorder WASAPI Data Transer API',
     long_description=long_description,
     long_description_content_type='text/markdown',
     install_requires=['requests>=2.18.1'],
