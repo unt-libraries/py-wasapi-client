@@ -149,13 +149,15 @@ class Test_Downloads:
         mock_session.return_value.get.return_value = MockResponse200()
         downloads = wc.Downloads(WASAPI_URL, download=True)
         j_queue = downloads.get_q
-        assert j_queue.qsize() == 2
+
         # Drain the JoinableQueue to avoid BrokenPipeError.
         # There could be a better way to handle this...
-        while j_queue.qsize():
+        for _ in (1, 2):
             q_item = j_queue.get()
             assert isinstance(q_item, wc.DataFile)
             j_queue.task_done()
+        # Verify it was two items on the queue.
+        assert j_queue.empty()
 
     def test_populate_downloads_multi_page(self, mock_session):
         """Test the queue returned for multiple results pages."""
@@ -165,12 +167,14 @@ class Test_Downloads:
         mock_session.return_value.get.side_effect = responses
         downloads = wc.Downloads(WASAPI_URL, download=True)
         j_queue = downloads.get_q
-        assert j_queue.qsize() == 4
+
         # Drain the JoinableQueue to avoid BrokenPipeError.
-        while j_queue.qsize():
+        for _ in range(4):
             q_item = j_queue.get()
             assert isinstance(q_item, wc.DataFile)
             j_queue.task_done()
+        # Verify there were only 4 items on the queue.
+        assert j_queue.empty()
 
     def test_populate_downloads_no_get_q(self, mock_session):
         """Test download=False prevents get_q attribute existing."""
@@ -599,8 +603,9 @@ class TestDownloader:
         get_q = multiprocessing.JoinableQueue()
         for _ in (1, 2):
             get_q.put(self.data_file)
-        result_q = multiprocessing.Queue()
-        log_q = multiprocessing.Queue()
+        manager = multiprocessing.Manager()
+        result_q = manager.Queue()
+        log_q = manager.Queue()
         with patch('wasapi_client.verify_file', return_value=True), \
                 patch('wasapi_client.download_file', return_value=self.data_file):
             p = wc.Downloader(get_q, result_q, log_q)
@@ -608,30 +613,36 @@ class TestDownloader:
             p.run()
         # If the join doesn't block, the queue is fully processed.
         get_q.join()
-        assert result_q.qsize() == 2
-        assert log_q.qsize() == 0
+        # Verify there is nothing on the log_q.
+        assert log_q.empty()
         for _ in (1, 2):
             assert result_q.get() == ('success', self.filename)
+        # Verify those were the only two results on the result_q.
+        assert result_q.empty()
 
     @patch('wasapi_client.download_file')
     def test_run_WASAPIDownloadError(self, mock_download):
         """Test downloader when downloads fail."""
-        mock_download.side_effect = wc.WASAPIDownloadError()
+        expected_error = 'WD Error'
+        mock_download.side_effect = wc.WASAPIDownloadError(expected_error)
         # Create a queue holding two sets of file data.
         get_q = multiprocessing.JoinableQueue()
         for _ in (1, 2):
             get_q.put(self.data_file)
-        result_q = multiprocessing.Queue()
-        log_q = multiprocessing.Queue()
+        manager = multiprocessing.Manager()
+        result_q = manager.Queue()
+        log_q = manager.Queue()
         p = wc.Downloader(get_q, result_q, log_q)
         p.start()
         p.run()
         # If the join doesn't block, the queue is fully processed.
         get_q.join()
-        assert result_q.qsize() == 2
-        assert log_q.qsize() == 2
         for _ in (1, 2):
+            assert log_q.get().msg == expected_error
             assert result_q.get() == ('failure', self.filename)
+        # Verify those were the only two results on the result_q.
+        # Sometimes `empty` needs a moment to register.
+        assert result_q.empty()
 
     def test_run_file_already_verified(self):
         """Test a downloaded file is not verified twice."""
@@ -641,8 +652,9 @@ class TestDownloader:
         get_q = multiprocessing.JoinableQueue()
         for _ in (1, 2):
             get_q.put(self.data_file)
-        result_q = multiprocessing.Queue()
-        log_q = multiprocessing.Queue()
+        manager = multiprocessing.Manager()
+        result_q = manager.Queue()
+        log_q = manager.Queue()
         with patch('wasapi_client.verify_file', return_value=True) as mock_verify, \
                 patch('wasapi_client.download_file', return_value=return_data_file):
             p = wc.Downloader(get_q, result_q, log_q)
@@ -650,10 +662,10 @@ class TestDownloader:
             p.run()
         # If the join doesn't block, the queue is fully processed.
         get_q.join()
-        assert result_q.qsize() == 2
-        assert log_q.qsize() == 0
+        assert log_q.empty()
         for _ in (1, 2):
             assert result_q.get() == ('success', self.filename)
+        assert result_q.empty()
         # Check verify_exists was not called, since it was called in `download_file`.
         assert not mock_verify.called
 
