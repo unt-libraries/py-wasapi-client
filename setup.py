@@ -9,7 +9,7 @@ with open('README.md', 'r') as readme_f:
 
 setup(
     name='py-wasapi-client',
-    version='1.0.0',
+    version='1.1.0',
     url='https://github.com/unt-libraries/py-wasapi-client',
     author='University of North Texas Libraries',
     author_email='lauren.ko@unt.edu',
