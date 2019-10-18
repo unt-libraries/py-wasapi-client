@@ -2,14 +2,20 @@ jobs:
   include:
     - os: linux
       dist: xenial
+      python: 3.4
+    - os: linux
+      dist: xenial
+      python: 3.5
+    - os: linux
+      dist: xenial
+      python: 3.6
+    - os: linux
+      dist: xenial
+      python: 3.7
     - os: osx
+      python: 3.7
 language: python
 sudo: false
-python:
-  - "3.4"
-  - "3.5"
-  - "3.6"
-  - "3.7"
 install:
   - pip install -r requirements-test.txt
   - pip install flake8
