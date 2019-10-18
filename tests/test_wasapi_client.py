@@ -6,7 +6,6 @@ import json
 import multiprocessing
 import os
 import sys
-import time
 from collections import OrderedDict
 from logging import INFO
 from unittest.mock import call, mock_open, patch
@@ -604,8 +603,9 @@ class TestDownloader:
         get_q = multiprocessing.JoinableQueue()
         for _ in (1, 2):
             get_q.put(self.data_file)
-        result_q = multiprocessing.Queue()
-        log_q = multiprocessing.Queue()
+        manager = multiprocessing.Manager()
+        result_q = manager.Queue()
+        log_q = manager.Queue()
         with patch('wasapi_client.verify_file', return_value=True), \
                 patch('wasapi_client.download_file', return_value=self.data_file):
             p = wc.Downloader(get_q, result_q, log_q)
@@ -629,8 +629,9 @@ class TestDownloader:
         get_q = multiprocessing.JoinableQueue()
         for _ in (1, 2):
             get_q.put(self.data_file)
-        result_q = multiprocessing.Queue()
-        log_q = multiprocessing.Queue()
+        manager = multiprocessing.Manager()
+        result_q = manager.Queue()
+        log_q = manager.Queue()
         p = wc.Downloader(get_q, result_q, log_q)
         p.start()
         p.run()
@@ -641,7 +642,6 @@ class TestDownloader:
             assert result_q.get() == ('failure', self.filename)
         # Verify those were the only two results on the result_q.
         # Sometimes `empty` needs a moment to register.
-        time.sleep(.5)
         assert result_q.empty()
 
     def test_run_file_already_verified(self):
@@ -652,8 +652,9 @@ class TestDownloader:
         get_q = multiprocessing.JoinableQueue()
         for _ in (1, 2):
             get_q.put(self.data_file)
-        result_q = multiprocessing.Queue()
-        log_q = multiprocessing.Queue()
+        manager = multiprocessing.Manager()
+        result_q = manager.Queue()
+        log_q = manager.Queue()
         with patch('wasapi_client.verify_file', return_value=True) as mock_verify, \
                 patch('wasapi_client.download_file', return_value=return_data_file):
             p = wc.Downloader(get_q, result_q, log_q)
